@@ -1,0 +1,16 @@
+.vs/
+.vscode/
+
+bin/
+obj/
+
+Navlight.Registration.App/bin/
+Navlight.Registration.App/obj/
+
+Navlight.Registration.App/appsettings.json
+Navlight.Registration.App/EntryLists/*.txt
+Navlight.Registration.App/EntryLists/*.tsv
+
+*.user
+*.suo
+*.cache
