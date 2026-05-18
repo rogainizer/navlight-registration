@@ -4,12 +4,13 @@ on:
   workflow_dispatch:
     inputs:
       tag_name:
-        description: Tag name to create or update for this release, for example v1.0.0
+        description: Tag name to create or update for this release, for example 2.1
         required: true
         type: string
       release_name:
         description: Release title shown on GitHub
         required: true
+        default: NavlightRegistration
         type: string
   push:
     tags:
@@ -46,5 +47,5 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.event.inputs.tag_name || github.ref_name }}
-          name: ${{ github.event.inputs.release_name || github.ref_name }}
+          name: ${{ github.event.inputs.release_name || 'NavlightRegistration' }}
           files: dist/navlight-release-win-x64.zip
