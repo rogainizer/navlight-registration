@@ -1,4 +1,4 @@
-# Navlight
+# Navlight Registration
 
 Navlight is a Windows desktop registration system for a rogaine event. It uses a shared MySQL database on the local network so multiple client PCs can work against the same event data.
 
@@ -32,7 +32,7 @@ Download the installer bundle from GitHub Releases:
 
 Direct download for the latest published ZIP:
 
-- https://github.com/rogainizer/navlight-registration/releases/latest/download/navlight-release-win-x64.zip
+- https://github.com/rogainizer/navlight-registration/releases/latest/download/navlight-registration-win-x64.zip
 
 After extracting the ZIP, the main installer is `install-navlight.ps1`.
 
@@ -42,7 +42,7 @@ The ZIP also includes `get-dhcp-reservation-info.ps1`, which prints the current 
 
 Use this on the PC that will hold the shared MySQL database.
 
-1. Download `navlight-release-win-x64.zip` from GitHub Releases.
+1. Download `navlight-registration-win-x64.zip` from GitHub Releases.
 2. Extract it to a folder.
 3. Make sure the router DHCP reservation is already configured for this PC.
 4. Open PowerShell.
@@ -69,7 +69,7 @@ When the install completes, the host PC is the database server that all client P
 
 Use this on every additional PC that should connect to the host database.
 
-1. Download `navlight-release-win-x64.zip` from GitHub Releases.
+1. Download `navlight-registration-win-x64.zip` from GitHub Releases.
 2. Extract it to a folder.
 3. Open PowerShell.
 4. Run:
@@ -98,6 +98,7 @@ If you are building the installer bundle locally from source, run this from the 
 ```
 
 This creates `dist\navlight-release-win-x64.zip`.
+This creates `dist\navlight-registration-win-x64.zip`.
 
 ## Create a GitHub release
 
@@ -110,4 +111,4 @@ From GitHub Actions:
 3. enter a tag such as `v1.0.0`
 4. enter a release name such as `Navlight v1.0.0`
 
-That workflow builds `navlight-release-win-x64.zip` and attaches it to the GitHub release.
+That workflow builds `navlight-registration-win-x64.zip` and attaches it to the GitHub release.

@@ -12,9 +12,9 @@ $registrationRoot = Join-Path $repoRoot "Navlight-Registration"
 $hostRoot = Join-Path $repoRoot "Navlight-Host"
 $projectPath = Join-Path $registrationRoot "Navlight.Registration.App\Navlight.Registration.App.csproj"
 $publishDir = Join-Path $OutputRoot "publish"
-$bundleRoot = Join-Path $OutputRoot "Navlight-Release"
+$bundleRoot = Join-Path $OutputRoot "Navlight-Registration-Release"
 $payloadRoot = Join-Path $bundleRoot "payload"
-$zipPath = Join-Path $OutputRoot "navlight-release-$RuntimeIdentifier.zip"
+$zipPath = Join-Path $OutputRoot "navlight-registration-$RuntimeIdentifier.zip"
 
 if (Test-Path -LiteralPath $publishDir) {
     Remove-Item -LiteralPath $publishDir -Recurse -Force
