@@ -1,6 +1,7 @@
 param(
     [SecureString]$RootPassword = (ConvertTo-SecureString "root" -AsPlainText -Force),
-    [int]$Port = 3306
+    [int]$Port = 3306,
+    [string]$SchemaPath
 )
 
 $ErrorActionPreference = "Stop"
@@ -9,7 +10,12 @@ $databaseRoot = $PSScriptRoot
 $mysqlRoot = Join-Path $databaseRoot "mysql"
 $binRoot = Join-Path $mysqlRoot "bin"
 $dataRoot = Join-Path $databaseRoot "data"
-$schemaPath = Join-Path $databaseRoot "..\..\Navlight-Registration\database\schema.sql"
+
+if ([string]::IsNullOrWhiteSpace($SchemaPath)) {
+    $localSchemaPath = Join-Path $databaseRoot "schema.sql"
+    $repoSchemaPath = Join-Path $databaseRoot "..\..\Navlight-Registration\database\schema.sql"
+    $SchemaPath = if (Test-Path -LiteralPath $localSchemaPath) { $localSchemaPath } else { $repoSchemaPath }
+}
 
 $mysqldPath = Join-Path $binRoot "mysqld.exe"
 $mysqlPath = Join-Path $binRoot "mysql.exe"
@@ -58,7 +64,7 @@ function Get-PlainText {
 Assert-FileExists -Path $mysqldPath -Description "mysqld.exe"
 Assert-FileExists -Path $mysqlPath -Description "mysql.exe"
 Assert-FileExists -Path $mysqlAdminPath -Description "mysqladmin.exe"
-Assert-FileExists -Path $schemaPath -Description "schema.sql"
+Assert-FileExists -Path $SchemaPath -Description "schema.sql"
 
 if (-not (Test-Path -LiteralPath $dataRoot)) {
     New-Item -ItemType Directory -Path $dataRoot | Out-Null
@@ -108,7 +114,7 @@ FLUSH PRIVILEGES;
         }
 
         Write-Host "Loading registration schema..."
-        Get-Content -Raw -Path $schemaPath | & $mysqlPath --protocol=TCP --port=$Port -u root "--password=$plainRootPassword"
+        Get-Content -Raw -Path $SchemaPath | & $mysqlPath --protocol=TCP --port=$Port -u root "--password=$plainRootPassword"
         if ($LASTEXITCODE -ne 0) {
             throw "Loading the registration schema failed with exit code $LASTEXITCODE."
         }
