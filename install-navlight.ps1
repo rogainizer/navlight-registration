@@ -3,7 +3,7 @@ param(
     [ValidateSet("ClientOnly", "HostAndClient")]
     [string]$InstallMode,
     [string]$InstallRoot,
-    [string]$DatabaseServer,
+    [string]$DatabaseServer = "navlighthost",
     [int]$DatabasePort = 3306,
     [string]$DatabaseName = "navlight_registration",
     [string]$DatabaseUser = "root",
@@ -253,7 +253,7 @@ if (-not (Test-Path -LiteralPath $sourceAppDir)) {
 }
 
 if ($InstallMode -eq "ClientOnly" -and [string]::IsNullOrWhiteSpace($DatabaseServer)) {
-    $DatabaseServer = Read-RequiredValue -Prompt "Enter the database host IP or name" -DefaultValue ""
+    $DatabaseServer = Read-RequiredValue -Prompt "Enter the database host name" -DefaultValue "navlighthost"
 }
 
 Ensure-Directory -Path $InstallRoot
@@ -271,12 +271,7 @@ if ($PSCmdlet.ShouldProcess($InstallRoot, "Install Navlight files")) {
 
 $plainDatabasePassword = Get-PlainText -Value $DatabasePassword
 $resolvedDatabaseServer = if ([string]::IsNullOrWhiteSpace($DatabaseServer)) {
-    $detectedAddress = Get-PrimaryIPv4Address
-    if ([string]::IsNullOrWhiteSpace($detectedAddress)) {
-        throw "Could not determine a LAN IPv4 address for the host. Supply -DatabaseServer explicitly."
-    }
-
-    $detectedAddress
+    "navlighthost"
 }
 else {
     $DatabaseServer
@@ -293,14 +288,20 @@ if ($InstallMode -eq "HostAndClient") {
         }
     }
 
-    $resolvedDatabaseServer = Read-ValueWithDefault -Prompt "Host IP or name for other client PCs to use" -DefaultValue $resolvedDatabaseServer
+    $resolvedDatabaseServer = Read-ValueWithDefault -Prompt "Host name for other client PCs to use" -DefaultValue $resolvedDatabaseServer
     if ([string]::IsNullOrWhiteSpace($resolvedDatabaseServer)) {
-        throw "Host installs require a client-facing host IP or name."
+        throw "Host installs require a client-facing host name."
     }
 
     $reservationConfirmed = Read-YesNo -Prompt "Have you already created a DHCP reservation on the router for this host so clients will always use $resolvedDatabaseServer" -DefaultValue $false
     if (-not $reservationConfirmed) {
         throw "Host install stopped. Create the DHCP reservation on the router first, then rerun the installer."
+    }
+
+    Write-Host "Checking that hostname '$resolvedDatabaseServer' resolves on this PC..."
+    $hostPingSucceeded = Test-Connection -ComputerName $resolvedDatabaseServer -Count 1 -Quiet -ErrorAction SilentlyContinue
+    if (-not $hostPingSucceeded) {
+        throw "Host install stopped. Ping to '$resolvedDatabaseServer' failed. Confirm the router reservation and local DNS entry exist, then rerun the installer."
     }
 }
 

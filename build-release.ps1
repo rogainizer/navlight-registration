@@ -49,6 +49,7 @@ Copy-Item -LiteralPath (Join-Path $hostRoot "Database\start-mysql.ps1") -Destina
 Copy-Item -LiteralPath (Join-Path $hostRoot "Database\stop-mysql.ps1") -Destination (Join-Path $databaseTargetDir "stop-mysql.ps1")
 Copy-Item -LiteralPath (Join-Path $registrationRoot "database\schema.sql") -Destination (Join-Path $databaseTargetDir "schema.sql")
 Copy-Item -LiteralPath (Join-Path $registrationRoot "database\test-data.sql") -Destination (Join-Path $databaseTargetDir "test-data.sql")
+Copy-Item -LiteralPath (Join-Path $registrationRoot "get-dhcp-reservation-info.ps1") -Destination (Join-Path $bundleRoot "get-dhcp-reservation-info.ps1")
 Copy-Item -LiteralPath (Join-Path $repoRoot "install-navlight.ps1") -Destination (Join-Path $bundleRoot "install-navlight.ps1")
 
 $readmePath = Join-Path $bundleRoot "README.txt"
@@ -57,6 +58,7 @@ Navlight release bundle
 
 Files:
 - install-navlight.ps1 : installs ClientOnly or HostAndClient roles
+- get-dhcp-reservation-info.ps1 : shows the host PC IPv4 and MAC address for router DHCP reservation setup
 - payload\Navlight.Registration.App : published desktop app
 - payload\Database : MySQL setup/start/stop scripts and schema files
 
@@ -65,10 +67,10 @@ If you do not pass -InstallRoot, the installer will prompt for the install folde
 The installer does not require elevation unless you choose a protected install folder.
 
 Examples:
-powershell -ExecutionPolicy Bypass -File .\install-navlight.ps1 -InstallMode ClientOnly -DatabaseServer 192.168.1.10
+powershell -ExecutionPolicy Bypass -File .\install-navlight.ps1 -InstallMode ClientOnly -DatabaseServer navlighthost
 powershell -ExecutionPolicy Bypass -File .\install-navlight.ps1 -InstallMode HostAndClient
 
-Host installs will suggest the detected LAN IPv4 address, ask for the router-reserved host IP or DNS name that client PCs should use, and stop if you have not already created a DHCP reservation on the router.
+Host installs default the app configuration to navlighthost, ask for the host name that client PCs should use, and stop if you have not already created a DHCP reservation on the router.
 "@ | Set-Content -Path $readmePath -Encoding ASCII
 
 Compress-Archive -Path (Join-Path $bundleRoot "*") -DestinationPath $zipPath
