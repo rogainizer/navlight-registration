@@ -50,6 +50,7 @@ Copy-Item -LiteralPath (Join-Path $hostRoot "Database\stop-mysql.ps1") -Destinat
 Copy-Item -LiteralPath (Join-Path $registrationRoot "database\schema.sql") -Destination (Join-Path $databaseTargetDir "schema.sql")
 Copy-Item -LiteralPath (Join-Path $registrationRoot "database\test-data.sql") -Destination (Join-Path $databaseTargetDir "test-data.sql")
 Copy-Item -LiteralPath (Join-Path $registrationRoot "get-dhcp-reservation-info.ps1") -Destination (Join-Path $bundleRoot "get-dhcp-reservation-info.ps1")
+Copy-Item -LiteralPath (Join-Path $repoRoot "Find-NavlightReaderPort.ps1") -Destination (Join-Path $bundleRoot "Find-NavlightReaderPort.ps1")
 Copy-Item -LiteralPath (Join-Path $repoRoot "install-navlight.ps1") -Destination (Join-Path $bundleRoot "install-navlight.ps1")
 
 $readmePath = Join-Path $bundleRoot "README.txt"
@@ -59,6 +60,7 @@ Navlight release bundle
 Files:
 - install-navlight.ps1 : installs ClientOnly or HostAndClient roles
 - get-dhcp-reservation-info.ps1 : shows the host PC IPv4 and MAC address for router DHCP reservation setup
+- Find-NavlightReaderPort.ps1 : scans COM ports to find the NavLight reader
 - payload\Navlight.Registration.App : published desktop app
 - payload\Database : MySQL setup/start/stop scripts and schema files
 

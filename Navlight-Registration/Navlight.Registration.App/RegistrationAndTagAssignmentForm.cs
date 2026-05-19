@@ -15,7 +15,7 @@ public sealed class RegistrationAndTagAssignmentForm : Form
 
     private readonly RegistrationRepository _repository;
     private readonly NavLightTagReader _tagReader;
-    private readonly TagReaderOptions _tagReaderOptions;
+    private TagReaderOptions _tagReaderOptions;
     private readonly TextBox _searchTextBox;
     private readonly ListBox _searchResultsListBox;
     private readonly TextBox _teamNumberTextBox;
@@ -43,6 +43,8 @@ public sealed class RegistrationAndTagAssignmentForm : Form
     private bool _suppressSelectionHandling;
     private bool _suppressSearchTextHandling;
     private bool _hasUnsavedChanges;
+    private bool _busy;
+    private bool _detectingReaderPort;
     private int _searchRequestVersion;
     private string _lastSearchText = string.Empty;
 
@@ -53,8 +55,8 @@ public sealed class RegistrationAndTagAssignmentForm : Form
         MinimumSize = new Size(1080, 760);
 
         _repository = new RegistrationRepository(DatabaseOptions.Load());
-    _tagReader = new NavLightTagReader();
-    _tagReaderOptions = TagReaderOptions.Load();
+        _tagReader = new NavLightTagReader();
+        _tagReaderOptions = TagReaderOptions.Load();
         _copyActionIcon = CreateCopyActionIcon();
         _pasteActionIcon = CreatePasteActionIcon();
         _deleteActionIcon = CreateDeleteActionIcon();
@@ -362,6 +364,58 @@ public sealed class RegistrationAndTagAssignmentForm : Form
 
         Controls.Add(rootLayout);
         SetEditState(false);
+        Shown += RegistrationAndTagAssignmentForm_Shown;
+    }
+
+    private async void RegistrationAndTagAssignmentForm_Shown(object? sender, EventArgs e)
+    {
+        Shown -= RegistrationAndTagAssignmentForm_Shown;
+        await InitializeTagReaderAvailabilityAsync();
+    }
+
+    private async Task InitializeTagReaderAvailabilityAsync()
+    {
+        _detectingReaderPort = true;
+        UpdateAssignTagButtonState();
+        SetStatus("Searching COM ports for the NavLight reader...");
+
+        try
+        {
+            var detectedPort = await _tagReader.FindReaderPortAsync(_tagReaderOptions.ResponseTimeout).ConfigureAwait(true);
+            if (string.IsNullOrWhiteSpace(detectedPort))
+            {
+                _tagReaderOptions = _tagReaderOptions.WithPortName(string.Empty);
+                SetStatus("No NavLight reader was detected on the scanned COM ports.", true);
+                return;
+            }
+
+            var previousPort = _tagReaderOptions.PortName;
+            _tagReaderOptions = _tagReaderOptions.WithPortName(detectedPort);
+
+            try
+            {
+                _tagReaderOptions.Save();
+            }
+            catch (Exception ex)
+            {
+                SetStatus($"NavLight reader found on {detectedPort}, but appsettings.json could not be updated: {ex.Message}", true);
+                return;
+            }
+
+            SetStatus(string.Equals(previousPort, detectedPort, StringComparison.OrdinalIgnoreCase)
+                ? $"NavLight reader ready on {detectedPort}."
+                : $"NavLight reader found on {detectedPort}. Saved for future use.");
+        }
+        catch (Exception ex)
+        {
+            _tagReaderOptions = _tagReaderOptions.WithPortName(string.Empty);
+            SetStatus($"Unable to search COM ports for the NavLight reader: {ex.Message}", true);
+        }
+        finally
+        {
+            _detectingReaderPort = false;
+            UpdateAssignTagButtonState();
+        }
     }
 
     private static Label CreateFieldLabel(string text) => new()
@@ -551,7 +605,7 @@ public sealed class RegistrationAndTagAssignmentForm : Form
 
         if (!_tagReaderOptions.IsConfigured)
         {
-            SetStatus("Tag reader COM port is not configured. Set TagReader.PortName in appsettings.json.", true);
+            SetStatus("No NavLight reader is available. Check the reader connection and reopen tag assignment.", true);
             return;
         }
 
@@ -1192,21 +1246,27 @@ public sealed class RegistrationAndTagAssignmentForm : Form
         _courseComboBox.Enabled = enabled;
         _competitorsGrid.Enabled = enabled;
         _tagCodesTextBox.Enabled = enabled;
-        _assignTagButton.Enabled = enabled && _tagReaderOptions.IsConfigured;
+        UpdateAssignTagButtonState();
         _saveButton.Enabled = enabled;
     }
 
     private void ToggleBusyState(bool busy, string? status = null)
     {
+        _busy = busy;
         UseWaitCursor = busy;
         _searchTextBox.Enabled = !busy;
         _searchResultsListBox.Enabled = !busy;
-        _assignTagButton.Enabled = !busy && _currentTeam is not null && _tagReaderOptions.IsConfigured;
+        UpdateAssignTagButtonState();
         _saveButton.Enabled = !busy && _currentTeam is not null;
         if (status is not null)
         {
             SetStatus(status);
         }
+    }
+
+    private void UpdateAssignTagButtonState()
+    {
+        _assignTagButton.Enabled = !_busy && !_detectingReaderPort && _currentTeam is not null && _tagReaderOptions.IsConfigured;
     }
 
     private void SetStatus(string message, bool isError = false)

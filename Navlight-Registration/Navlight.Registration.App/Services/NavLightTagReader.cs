@@ -17,6 +17,27 @@ public sealed class NavLightTagReader
     private static readonly TimeSpan DefaultResponseTimeout = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan DefaultTagDetectTimeout = Timeout.InfiniteTimeSpan;
 
+    public async Task<string?> FindReaderPortAsync(
+        TimeSpan? responseTimeout = null,
+        int maxPortNumber = 20,
+        int initialDelayMilliseconds = 200,
+        CancellationToken cancellationToken = default)
+    {
+        var effectiveResponseTimeout = responseTimeout ?? DefaultResponseTimeout;
+
+        foreach (var portName in GetCandidatePortNames(maxPortNumber))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (await IsReaderPortAsync(portName, effectiveResponseTimeout, initialDelayMilliseconds, cancellationToken).ConfigureAwait(false))
+            {
+                return portName;
+            }
+        }
+
+        return null;
+    }
+
     public async Task<NavLightTagReadResult> ReadAndClearTagAsync(
         string portName,
         CancellationToken cancellationToken,
@@ -115,6 +136,108 @@ public sealed class NavLightTagReader
             DtrEnable = true,
             NewLine = "\r\n"
         };
+    }
+
+    private static IEnumerable<string> GetCandidatePortNames(int maxPortNumber)
+    {
+        return SerialPort.GetPortNames()
+            .Select(portName => new
+            {
+                PortName = portName,
+                PortNumber = TryGetPortNumber(portName)
+            })
+            .Where(candidate => candidate.PortNumber.HasValue && candidate.PortNumber.Value <= maxPortNumber)
+            .OrderBy(candidate => candidate.PortNumber)
+            .Select(candidate => candidate.PortName);
+    }
+
+    private static int? TryGetPortNumber(string portName)
+    {
+        if (!portName.StartsWith("COM", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        return int.TryParse(portName[3..], NumberStyles.None, CultureInfo.InvariantCulture, out var portNumber)
+            ? portNumber
+            : null;
+    }
+
+    private static async Task<bool> IsReaderPortAsync(
+        string portName,
+        TimeSpan responseTimeout,
+        int initialDelayMilliseconds,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var serialPort = CreatePort(portName, responseTimeout);
+            serialPort.Open();
+            serialPort.DiscardInBuffer();
+            serialPort.DiscardOutBuffer();
+
+            await Task.Delay(initialDelayMilliseconds, cancellationToken).ConfigureAwait(false);
+            await SendProbeAsync(serialPort, cancellationToken).ConfigureAwait(false);
+            var response = await ReadProbeResponseAsync(serialPort, responseTimeout, cancellationToken).ConfigureAwait(false);
+            return IsReaderProbeResponse(response);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static async Task SendProbeAsync(SerialPort serialPort, CancellationToken cancellationToken)
+    {
+        const string payload = "*]\r\n";
+
+        foreach (var character in payload)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            serialPort.Write(character.ToString());
+            await Task.Delay(2, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private static async Task<string> ReadProbeResponseAsync(
+        SerialPort serialPort,
+        TimeSpan timeout,
+        CancellationToken cancellationToken)
+    {
+        var deadline = timeout == Timeout.InfiniteTimeSpan
+            ? DateTimeOffset.MaxValue
+            : DateTimeOffset.UtcNow.Add(timeout);
+
+        var buffer = new StringBuilder();
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var chunk = serialPort.ReadExisting();
+            if (!string.IsNullOrEmpty(chunk))
+            {
+                buffer.Append(chunk);
+                var response = buffer.ToString();
+                if (IsReaderProbeResponse(response))
+                {
+                    return response;
+                }
+            }
+
+            await Task.Delay(10, cancellationToken).ConfigureAwait(false);
+        }
+
+        return buffer.ToString();
+    }
+
+    private static bool IsReaderProbeResponse(string response)
+    {
+        return response.Contains('^')
+            || response.Contains("Connected", StringComparison.OrdinalIgnoreCase);
     }
 
     private static async Task ShowReaderReadyLightAsync(

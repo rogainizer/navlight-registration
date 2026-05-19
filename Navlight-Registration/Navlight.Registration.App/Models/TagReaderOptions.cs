@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace Navlight.Registration.App.Models;
 
@@ -17,9 +18,20 @@ public sealed class TagReaderOptions
         ? Timeout.InfiniteTimeSpan
         : TimeSpan.FromMilliseconds(TagDetectTimeoutMilliseconds);
 
+    public TagReaderOptions WithPortName(string portName)
+    {
+        return new TagReaderOptions
+        {
+            PortName = portName,
+            ResponseTimeoutMilliseconds = ResponseTimeoutMilliseconds,
+            TagDetectTimeoutMilliseconds = TagDetectTimeoutMilliseconds,
+            ResetInterface = ResetInterface
+        };
+    }
+
     public static TagReaderOptions Load()
     {
-        var configPath = Path.Combine(AppContext.BaseDirectory, "appsettings.json");
+        var configPath = GetConfigPath();
         if (!File.Exists(configPath))
         {
             throw new InvalidOperationException($"Configuration file not found: {configPath}");
@@ -42,5 +54,38 @@ public sealed class TagReaderOptions
                 : -1,
             ResetInterface = section.TryGetProperty("ResetInterface", out var resetInterface) && resetInterface.GetBoolean()
         };
+    }
+
+    public void Save()
+    {
+        var configPath = GetConfigPath();
+        JsonObject root;
+
+        if (File.Exists(configPath))
+        {
+            root = JsonNode.Parse(File.ReadAllText(configPath)) as JsonObject
+                ?? throw new InvalidOperationException($"Configuration file is not a JSON object: {configPath}");
+        }
+        else
+        {
+            root = [];
+        }
+
+        var section = root["TagReader"] as JsonObject ?? [];
+        section["PortName"] = PortName;
+        section["ResponseTimeoutMilliseconds"] = ResponseTimeoutMilliseconds;
+        section["TagDetectTimeoutMilliseconds"] = TagDetectTimeoutMilliseconds;
+        section["ResetInterface"] = ResetInterface;
+        root["TagReader"] = section;
+
+        File.WriteAllText(configPath, root.ToJsonString(new JsonSerializerOptions
+        {
+            WriteIndented = true
+        }));
+    }
+
+    private static string GetConfigPath()
+    {
+        return Path.Combine(AppContext.BaseDirectory, "appsettings.json");
     }
 }

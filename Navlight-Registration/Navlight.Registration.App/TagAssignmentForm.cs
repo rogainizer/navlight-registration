@@ -12,7 +12,7 @@ public sealed class TagAssignmentForm : Form
 
     private readonly RegistrationRepository _repository;
     private readonly NavLightTagReader _tagReader;
-    private readonly TagReaderOptions _tagReaderOptions;
+    private TagReaderOptions _tagReaderOptions;
     private readonly TextBox _searchTextBox;
     private readonly ListBox _searchResultsListBox;
     private readonly TextBox _teamNumberTextBox;
@@ -29,6 +29,8 @@ public sealed class TagAssignmentForm : Form
     private TeamTagAssignment? _currentTeam;
     private bool _loadingTeam;
     private bool _initialTeamLoaded;
+    private bool _busy;
+    private bool _detectingReaderPort;
     private int _searchRequestVersion;
     private string _loadedTagCodes = string.Empty;
 
@@ -314,7 +316,7 @@ public sealed class TagAssignmentForm : Form
 
         if (!_tagReaderOptions.IsConfigured)
         {
-            SetStatus("Tag reader COM port is not configured. Set TagReader.PortName in appsettings.json.", true);
+            SetStatus("No NavLight reader is available. Check the reader connection and reopen tag assignment.", true);
             return;
         }
 
@@ -416,6 +418,11 @@ public sealed class TagAssignmentForm : Form
 
     private async void TagAssignmentForm_Shown(object? sender, EventArgs e)
     {
+        if (!_initialTeamLoaded)
+        {
+            await InitializeTagReaderAvailabilityAsync();
+        }
+
         if (_initialTeamLoaded || !_initialTeamId.HasValue)
         {
             return;
@@ -423,6 +430,51 @@ public sealed class TagAssignmentForm : Form
 
         _initialTeamLoaded = true;
         await LoadTeamAsync(_initialTeamId.Value, "Loaded last saved registration.");
+    }
+
+    private async Task InitializeTagReaderAvailabilityAsync()
+    {
+        _detectingReaderPort = true;
+        UpdateAssignTagButtonState();
+        SetStatus("Searching COM ports for the NavLight reader...");
+
+        try
+        {
+            var detectedPort = await _tagReader.FindReaderPortAsync(_tagReaderOptions.ResponseTimeout).ConfigureAwait(true);
+            if (string.IsNullOrWhiteSpace(detectedPort))
+            {
+                _tagReaderOptions = _tagReaderOptions.WithPortName(string.Empty);
+                SetStatus("No NavLight reader was detected on the scanned COM ports.", true);
+                return;
+            }
+
+            var previousPort = _tagReaderOptions.PortName;
+            _tagReaderOptions = _tagReaderOptions.WithPortName(detectedPort);
+
+            try
+            {
+                _tagReaderOptions.Save();
+            }
+            catch (Exception ex)
+            {
+                SetStatus($"NavLight reader found on {detectedPort}, but appsettings.json could not be updated: {ex.Message}", true);
+                return;
+            }
+
+            SetStatus(string.Equals(previousPort, detectedPort, StringComparison.OrdinalIgnoreCase)
+                ? $"NavLight reader ready on {detectedPort}."
+                : $"NavLight reader found on {detectedPort}. Saved for future use.");
+        }
+        catch (Exception ex)
+        {
+            _tagReaderOptions = _tagReaderOptions.WithPortName(string.Empty);
+            SetStatus($"Unable to search COM ports for the NavLight reader: {ex.Message}", true);
+        }
+        finally
+        {
+            _detectingReaderPort = false;
+            UpdateAssignTagButtonState();
+        }
     }
 
     private void SwitchModeButton_Click(object? sender, EventArgs e)
@@ -620,21 +672,27 @@ public sealed class TagAssignmentForm : Form
     {
         _tagCodesTextBox.Enabled = enabled;
         _saveButton.Enabled = enabled;
-        _readAndClearTagButton.Enabled = enabled && _tagReaderOptions.IsConfigured;
+        UpdateAssignTagButtonState();
     }
 
     private void ToggleBusyState(bool busy, string? status = null)
     {
+        _busy = busy;
         UseWaitCursor = busy;
         _searchTextBox.Enabled = !busy;
         _searchResultsListBox.Enabled = !busy;
-        _readAndClearTagButton.Enabled = !busy && _currentTeam is not null && _tagReaderOptions.IsConfigured;
+        UpdateAssignTagButtonState();
         _saveButton.Enabled = !busy && _currentTeam is not null;
         _switchModeButton.Enabled = !busy;
         if (status is not null)
         {
             SetStatus(status);
         }
+    }
+
+    private void UpdateAssignTagButtonState()
+    {
+        _readAndClearTagButton.Enabled = !_busy && !_detectingReaderPort && _currentTeam is not null && _tagReaderOptions.IsConfigured;
     }
 
     private bool HasUnsavedTagChanges()
