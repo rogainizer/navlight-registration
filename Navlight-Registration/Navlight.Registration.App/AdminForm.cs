@@ -1,3 +1,4 @@
+using System.Drawing.Printing;
 using Navlight.Registration.App.Models;
 using Navlight.Registration.App.Services;
 
@@ -14,6 +15,7 @@ public sealed class AdminForm : Form
     private readonly Button _clearDatabaseButton;
     private readonly Button _exportButton;
     private readonly Button _loadButton;
+    private readonly Button _printButton;
     private readonly Button _refreshButton;
     private readonly Label _statusLabel;
     private readonly Bitmap _editActionIcon;
@@ -48,12 +50,13 @@ public sealed class AdminForm : Form
         var headingPanel = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
-            ColumnCount = 6,
+            ColumnCount = 7,
             RowCount = 2,
             Margin = new Padding(0, 0, 0, 12)
         };
         headingPanel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         headingPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        headingPanel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         headingPanel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         headingPanel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         headingPanel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
@@ -115,6 +118,16 @@ public sealed class AdminForm : Form
         };
         _loadButton.Click += async (_, _) => await OpenImportDialogAsync();
 
+        _printButton = new Button
+        {
+            Text = "Print",
+            AutoSize = true,
+            Height = 36,
+            Anchor = AnchorStyles.Right,
+            Margin = new Padding(0, 0, 8, 0)
+        };
+        _printButton.Click += async (_, _) => await PrintCoursesAsync();
+
         _refreshButton = new Button
         {
             Text = "Refresh",
@@ -125,13 +138,14 @@ public sealed class AdminForm : Form
         _refreshButton.Click += async (_, _) => await LoadTeamsAsync();
 
         headingPanel.Controls.Add(headingLabel, 0, 0);
-    headingPanel.SetColumnSpan(headingLabel, 6);
+    headingPanel.SetColumnSpan(headingLabel, 7);
         headingPanel.Controls.Add(searchLabel, 0, 1);
         headingPanel.Controls.Add(_teamSearchTextBox, 1, 1);
         headingPanel.Controls.Add(_clearDatabaseButton, 2, 1);
     headingPanel.Controls.Add(_exportButton, 3, 1);
     headingPanel.Controls.Add(_loadButton, 4, 1);
-    headingPanel.Controls.Add(_refreshButton, 5, 1);
+    headingPanel.Controls.Add(_printButton, 5, 1);
+    headingPanel.Controls.Add(_refreshButton, 6, 1);
 
         _teamsGrid = new DataGridView
         {
@@ -310,6 +324,83 @@ public sealed class AdminForm : Form
         if (dialog.ShowDialog(this) == DialogResult.OK)
         {
             await LoadTeamsAsync();
+        }
+    }
+
+    private async Task PrintCoursesAsync()
+    {
+        ToggleBusyState(true, "Loading courses for printing...");
+
+        try
+        {
+            var eventId = await _repository.GetDefaultEventIdAsync();
+            var courses = await _repository.GetCoursesAsync(eventId);
+            if (courses.Count == 0)
+            {
+                SetStatus("No courses are available to print.", true);
+                return;
+            }
+
+            using var courseDialog = new AdminCourseSelectionDialog(courses);
+            if (courseDialog.ShowDialog(this) != DialogResult.OK)
+            {
+                SetStatus("Printing cancelled.");
+                return;
+            }
+
+            var sections = courseDialog.SelectedCourses
+                .Select(course => new AdminCourseReportPrinter.CourseReportSection
+                {
+                    CourseName = course.Name,
+                    Rows = _allTeams
+                        .Where(team => team.CourseName.Equals(course.Name, StringComparison.OrdinalIgnoreCase))
+                        .OrderBy(team => team.CategoryName, StringComparer.OrdinalIgnoreCase)
+                        .ThenBy(team => team.TeamName, StringComparer.OrdinalIgnoreCase)
+                        .ToList()
+                })
+                .ToList();
+
+            using var document = new AdminCourseReportPrinter(sections).CreateDocument();
+
+            if (courseDialog.PreviewRequested)
+            {
+                using var previewDialog = new PrintPreviewDialog
+                {
+                    Document = document,
+                    Width = 1100,
+                    Height = 800,
+                    StartPosition = FormStartPosition.CenterParent,
+                    UseAntiAlias = true
+                };
+
+                previewDialog.ShowDialog(this);
+                SetStatus($"Previewed {sections.Count} course report(s).");
+                return;
+            }
+
+            using var printDialog = new PrintDialog
+            {
+                AllowSomePages = false,
+                UseEXDialog = true,
+                Document = document
+            };
+
+            if (printDialog.ShowDialog(this) != DialogResult.OK)
+            {
+                SetStatus("Printing cancelled.");
+                return;
+            }
+
+            document.Print();
+            SetStatus($"Sent {sections.Count} course report(s) to the printer.");
+        }
+        catch (Exception ex)
+        {
+            SetStatus(ex.Message, true);
+        }
+        finally
+        {
+            ToggleBusyState(false);
         }
     }
 
@@ -616,6 +707,7 @@ public sealed class AdminForm : Form
         _clearDatabaseButton.Enabled = !busy;
         _exportButton.Enabled = !busy;
         _loadButton.Enabled = !busy;
+        _printButton.Enabled = !busy;
         _refreshButton.Enabled = !busy;
         _teamSearchTextBox.Enabled = !busy;
         _teamsGrid.Enabled = !busy;
