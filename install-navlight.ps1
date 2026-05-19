@@ -5,7 +5,7 @@ param(
     [string]$InstallRoot,
     [string]$DatabaseServer = "navlighthost",
     [int]$DatabasePort = 3306,
-    [string]$DatabaseName = "navlight_registration",
+    [string]$DatabaseName = "navlight-registration",
     [string]$DatabaseUser = "root",
     [SecureString]$DatabasePassword = (ConvertTo-SecureString "root" -AsPlainText -Force),
     [string]$MySqlZipPath,

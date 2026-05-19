@@ -700,6 +700,49 @@ public sealed class RegistrationRepository
         return team;
     }
 
+    public async Task<string?> GetTagAssignmentOwnerDisplayAsync(string tagCode, int? excludeTeamId = null)
+    {
+        const string sql = """
+            SELECT Team.TeamNumber, Team.Name
+            FROM TagAssignment
+            INNER JOIN Team ON Team.TeamId = TagAssignment.TeamId
+            WHERE TagAssignment.TagCode = @tagCode
+              AND (@excludeTeamId IS NULL OR Team.TeamId <> @excludeTeamId)
+            LIMIT 1;
+            """;
+
+        await using var connection = new MySqlConnection(_connectionString);
+        await connection.OpenAsync();
+
+        await using var command = new MySqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@tagCode", tagCode);
+        command.Parameters.AddWithValue("@excludeTeamId", excludeTeamId);
+
+        await using var reader = await command.ExecuteReaderAsync();
+        if (!await reader.ReadAsync())
+        {
+            return null;
+        }
+
+        return $"team {reader.GetString("TeamNumber")} ({reader.GetString("Name")})";
+    }
+
+    public async Task<(string TagCode, string OwnerDisplay)?> GetFirstTagAssignmentConflictAsync(
+        IReadOnlyCollection<string> tagCodes,
+        int? excludeTeamId = null)
+    {
+        foreach (var tagCode in tagCodes)
+        {
+            var ownerDisplay = await GetTagAssignmentOwnerDisplayAsync(tagCode, excludeTeamId);
+            if (ownerDisplay is not null)
+            {
+                return (tagCode, ownerDisplay);
+            }
+        }
+
+        return null;
+    }
+
         public async Task SaveTagAssignmentsAsync(int teamId, DateTime lastUpdatedAt, IReadOnlyList<string> tagCodes)
     {
                 const string updateTeamSql = """

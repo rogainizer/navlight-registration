@@ -24,7 +24,7 @@ if (-not (Test-Path -LiteralPath $testDataPath)) {
 
 $credential = New-Object System.Management.Automation.PSCredential "unused", $RootPassword
 $plainRootPassword = $credential.GetNetworkCredential().Password
-$dropDatabaseSql = "DROP DATABASE IF EXISTS navlight_registration;"
+$dropDatabaseSql = 'DROP DATABASE IF EXISTS `navlight-registration`;'
 
 $previousMySqlPassword = $env:MYSQL_PWD
 $env:MYSQL_PWD = $plainRootPassword
@@ -33,7 +33,7 @@ try {
     Write-Host "Dropping existing development database..."
     $dropDatabaseSql | & $mysqlExePath -u root
     if ($LASTEXITCODE -ne 0) {
-        throw "Dropping navlight_registration failed with exit code $LASTEXITCODE."
+        throw "Dropping navlight-registration failed with exit code $LASTEXITCODE."
     }
 
     Write-Host "Loading schema..."

@@ -7,8 +7,12 @@ public sealed class TagAssignmentForm : Form
 {
     private const int MinimumSearchLength = 2;
     private const int SearchDebounceMilliseconds = 250;
+    private const int MaximumAssignedTagCount = 3;
+    private static readonly TimeSpan AdditionalTagWaitTimeout = TimeSpan.FromSeconds(10);
 
     private readonly RegistrationRepository _repository;
+    private readonly NavLightTagReader _tagReader;
+    private readonly TagReaderOptions _tagReaderOptions;
     private readonly TextBox _searchTextBox;
     private readonly ListBox _searchResultsListBox;
     private readonly TextBox _teamNumberTextBox;
@@ -16,6 +20,7 @@ public sealed class TagAssignmentForm : Form
     private readonly Label _tagStatusValueLabel;
     private readonly Label _tagStatusDetailLabel;
     private readonly TextBox _tagCodesTextBox;
+    private readonly Button _readAndClearTagButton;
     private readonly Button _saveButton;
     private readonly Button _switchModeButton;
     private readonly Label _statusLabel;
@@ -35,6 +40,8 @@ public sealed class TagAssignmentForm : Form
         _initialTeamId = initialTeamId;
 
         _repository = new RegistrationRepository(DatabaseOptions.Load());
+        _tagReader = new NavLightTagReader();
+        _tagReaderOptions = TagReaderOptions.Load();
         _searchDebounceTimer = new System.Windows.Forms.Timer
         {
             Interval = SearchDebounceMilliseconds
@@ -156,32 +163,53 @@ public sealed class TagAssignmentForm : Form
         detailsLayout.Controls.Add(CreateFieldLabel("Status"), 0, 3);
         detailsLayout.Controls.Add(statusPanel, 1, 3);
 
+        var tagHeaderPanel = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            ColumnCount = 3,
+            RowCount = 1,
+            Margin = new Padding(0, 8, 0, 8)
+        };
+        tagHeaderPanel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        tagHeaderPanel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        tagHeaderPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        tagHeaderPanel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+
         var tagsLabel = new Label
         {
             Text = "Tag Codes",
             AutoSize = true,
             Font = new Font(Font, FontStyle.Bold),
-            Margin = new Padding(0, 8, 0, 8)
+            Anchor = AnchorStyles.Left,
+            Margin = new Padding(0, 8, 12, 8)
         };
-        detailsLayout.Controls.Add(tagsLabel, 0, 4);
-        detailsLayout.SetColumnSpan(tagsLabel, 2);
+        tagHeaderPanel.Controls.Add(tagsLabel, 0, 0);
+
+        _readAndClearTagButton = new Button
+        {
+            Text = "Assign Tag",
+            AutoSize = true,
+            Anchor = AnchorStyles.Left,
+            Height = 36,
+            Enabled = false,
+            Margin = new Padding(0, 0, 12, 0)
+        };
+        _readAndClearTagButton.Click += AssignTagButton_Click;
+        tagHeaderPanel.Controls.Add(_readAndClearTagButton, 1, 0);
 
         _tagCodesTextBox = new TextBox
         {
             Dock = DockStyle.Fill,
+            Margin = new Padding(0, 4, 0, 4),
             PlaceholderText = "Enter tag codes, separated by commas"
         };
+        _tagCodesTextBox.TextChanged += TagCodesTextBox_TextChanged;
+        tagHeaderPanel.Controls.Add(_tagCodesTextBox, 2, 0);
 
-        var tagSectionLayout = new TableLayoutPanel
-        {
-            Dock = DockStyle.Fill,
-            ColumnCount = 1,
-            RowCount = 2,
-            Margin = new Padding(0)
-        };
-        tagSectionLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        tagSectionLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        tagSectionLayout.Controls.Add(_tagCodesTextBox, 0, 0);
+        detailsLayout.Controls.Add(tagHeaderPanel, 0, 4);
+        detailsLayout.SetColumnSpan(tagHeaderPanel, 2);
 
         _saveButton = new Button
         {
@@ -207,7 +235,7 @@ public sealed class TagAssignmentForm : Form
         var footerPanel = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
-            ColumnCount = 3,
+            ColumnCount = 4,
             RowCount = 1,
             Margin = new Padding(0)
         };
@@ -216,10 +244,9 @@ public sealed class TagAssignmentForm : Form
         footerPanel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         footerPanel.Controls.Add(_saveButton, 0, 0);
         footerPanel.Controls.Add(_switchModeButton, 2, 0);
-        tagSectionLayout.Controls.Add(footerPanel, 0, 1);
 
-        detailsLayout.Controls.Add(tagSectionLayout, 0, 5);
-        detailsLayout.SetColumnSpan(tagSectionLayout, 2);
+        detailsLayout.Controls.Add(footerPanel, 0, 5);
+        detailsLayout.SetColumnSpan(footerPanel, 2);
 
         rootLayout.Controls.Add(searchPanel, 0, 0);
         rootLayout.Controls.Add(detailsLayout, 1, 0);
@@ -251,22 +278,134 @@ public sealed class TagAssignmentForm : Form
             return;
         }
 
-        var tagCodes = _tagCodesTextBox.Text
-            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Where(tagCode => !string.IsNullOrWhiteSpace(tagCode))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
+        var tagCodes = ParseTagCodes(_tagCodesTextBox.Text);
 
         ToggleBusyState(true, "Saving tag assignment...");
 
         try
         {
+            var conflict = await _repository.GetFirstTagAssignmentConflictAsync(tagCodes, _currentTeam.TeamId);
+            if (conflict.HasValue)
+            {
+                ShowTagAssignmentConflict(conflict.Value.TagCode, conflict.Value.OwnerDisplay);
+                return;
+            }
+
             await _repository.SaveTagAssignmentsAsync(_currentTeam.TeamId, _currentTeam.LastUpdatedAt, tagCodes);
             ResetForNextTeam();
             SetStatus("Tag assignment saved. Ready for next team.");
         }
         catch (Exception ex)
         {
+            SetStatus(ex.Message, true);
+        }
+        finally
+        {
+            ToggleBusyState(false);
+        }
+    }
+
+    private async void AssignTagButton_Click(object? sender, EventArgs e)
+    {
+        if (_currentTeam is null)
+        {
+            return;
+        }
+
+        if (!_tagReaderOptions.IsConfigured)
+        {
+            SetStatus("Tag reader COM port is not configured. Set TagReader.PortName in appsettings.json.", true);
+            return;
+        }
+
+        var tagCodes = ParseTagCodes(_tagCodesTextBox.Text);
+        if (tagCodes.Count >= MaximumAssignedTagCount)
+        {
+            SetStatus($"A maximum of {MaximumAssignedTagCount} tags can be assigned.", true);
+            return;
+        }
+
+        ToggleBusyState(true, $"Waiting for tag on {_tagReaderOptions.PortName}...");
+        var progressDialog = new TagAssignmentProgressDialog(tagCodes, MaximumAssignedTagCount);
+        using var assignmentCancellation = new CancellationTokenSource();
+        progressDialog.StopRequested += (_, _) => assignmentCancellation.Cancel();
+        progressDialog.Show(this);
+        var timedOutWaitingForAdditionalTag = false;
+        var stoppedByUser = false;
+
+        try
+        {
+            while (tagCodes.Count < MaximumAssignedTagCount)
+            {
+                var isFirstTag = tagCodes.Count == 0;
+                progressDialog.SetStatus(isFirstTag
+                    ? $"Waiting for first tag on {_tagReaderOptions.PortName}..."
+                    : $"Waiting up to {AdditionalTagWaitTimeout.TotalSeconds:0} seconds for another tag...");
+
+                NavLightTagReadResult tag;
+                try
+                {
+                    tag = await _tagReader.ReadAndClearTagAsync(
+                        _tagReaderOptions.PortName,
+                        assignmentCancellation.Token,
+                        _tagReaderOptions.ResponseTimeout,
+                        isFirstTag ? _tagReaderOptions.TagDetectTimeout : AdditionalTagWaitTimeout,
+                        _tagReaderOptions.ResetInterface);
+                }
+                catch (OperationCanceledException) when (assignmentCancellation.IsCancellationRequested)
+                {
+                    stoppedByUser = true;
+                    break;
+                }
+                catch (TimeoutException) when (!isFirstTag)
+                {
+                    timedOutWaitingForAdditionalTag = true;
+                    break;
+                }
+
+                if (tagCodes.Contains(tag.TagIdAlpha, StringComparer.OrdinalIgnoreCase))
+                {
+                    progressDialog.SetStatus($"Read tag {tag.TagIdAlpha} again. Waiting for a different tag...");
+                    continue;
+                }
+
+                var assignedTo = await _repository.GetTagAssignmentOwnerDisplayAsync(tag.TagIdAlpha, _currentTeam.TeamId);
+                if (assignedTo is not null)
+                {
+                    progressDialog.SetStatus($"Tag {tag.TagIdAlpha} is already assigned to {assignedTo}.");
+                    ShowTagAssignmentConflict(tag.TagIdAlpha, assignedTo);
+                    continue;
+                }
+
+                tagCodes.Add(tag.TagIdAlpha);
+                progressDialog.AddTag(tag.TagIdAlpha);
+                progressDialog.SetStatus($"Read tag {tag.TagIdAlpha}.");
+
+                _tagCodesTextBox.Text = string.Join(", ", tagCodes);
+                _tagCodesTextBox.SelectionStart = _tagCodesTextBox.TextLength;
+            }
+
+            var assignedCount = tagCodes.Count;
+            var completeMessage = stoppedByUser
+                ? assignedCount == 1
+                    ? "Stopped after reading 1 tag."
+                    : $"Stopped after reading {assignedCount} tags."
+                : assignedCount == 1
+                    ? "Finished assigning 1 tag."
+                    : $"Finished assigning {assignedCount} tags.";
+            progressDialog.Complete(completeMessage, autoClose: timedOutWaitingForAdditionalTag);
+            SetStatus(completeMessage);
+            BeginInvoke(() =>
+            {
+                if (_saveButton.Enabled && Visible)
+                {
+                    _saveButton.Focus();
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            progressDialog.Complete(ex.Message);
             SetStatus(ex.Message, true);
         }
         finally
@@ -327,6 +466,11 @@ public sealed class TagAssignmentForm : Form
 
         _searchDebounceTimer.Stop();
         _searchDebounceTimer.Start();
+    }
+
+    private void TagCodesTextBox_TextChanged(object? sender, EventArgs e)
+    {
+        UpdateTagStatus(ParseTagCodes(_tagCodesTextBox.Text).Count);
     }
 
     private async Task SearchTeamsAsync(bool forceSearch = false)
@@ -429,11 +573,15 @@ public sealed class TagAssignmentForm : Form
             _teamNameTextBox.Text = _currentTeam.Name;
             _loadedTagCodes = string.Join(", ", _currentTeam.TagCodes);
             _tagCodesTextBox.Text = _loadedTagCodes;
-            _tagStatusValueLabel.Text = _currentTeam.TagCodes.Count > 0 ? "Tags assigned" : "Tags not assigned";
-            _tagStatusDetailLabel.Text = _currentTeam.TagCodes.Count > 0
-                ? $"{_currentTeam.TagCodes.Count} tag(s) currently assigned"
-                : string.Empty;
+            UpdateTagStatus(_currentTeam.TagCodes.Count);
             SetEditState(true);
+            BeginInvoke(() =>
+            {
+                if (_readAndClearTagButton.Enabled && Visible)
+                {
+                    _readAndClearTagButton.Focus();
+                }
+            });
         }
         finally
         {
@@ -448,10 +596,9 @@ public sealed class TagAssignmentForm : Form
         _searchRequestVersion++;
         _teamNumberTextBox.Clear();
         _teamNameTextBox.Clear();
-        _tagStatusValueLabel.Text = "Tags not assigned";
-        _tagStatusDetailLabel.Text = string.Empty;
         _loadedTagCodes = string.Empty;
         _tagCodesTextBox.Clear();
+        UpdateTagStatus(0);
         SetEditState(false);
     }
 
@@ -460,13 +607,20 @@ public sealed class TagAssignmentForm : Form
         _searchDebounceTimer.Stop();
         _searchTextBox.Clear();
         ClearTeamDetails();
-        _searchTextBox.Focus();
+        BeginInvoke(() =>
+        {
+            if (_searchTextBox.Enabled && Visible)
+            {
+                _searchTextBox.Focus();
+            }
+        });
     }
 
     private void SetEditState(bool enabled)
     {
         _tagCodesTextBox.Enabled = enabled;
         _saveButton.Enabled = enabled;
+        _readAndClearTagButton.Enabled = enabled && _tagReaderOptions.IsConfigured;
     }
 
     private void ToggleBusyState(bool busy, string? status = null)
@@ -474,6 +628,7 @@ public sealed class TagAssignmentForm : Form
         UseWaitCursor = busy;
         _searchTextBox.Enabled = !busy;
         _searchResultsListBox.Enabled = !busy;
+        _readAndClearTagButton.Enabled = !busy && _currentTeam is not null && _tagReaderOptions.IsConfigured;
         _saveButton.Enabled = !busy && _currentTeam is not null;
         _switchModeButton.Enabled = !busy;
         if (status is not null)
@@ -505,12 +660,34 @@ public sealed class TagAssignmentForm : Form
         return result == DialogResult.OK;
     }
 
+    private void ShowTagAssignmentConflict(string tagCode, string ownerDisplay)
+    {
+        MessageBox.Show(
+            this,
+            $"Tag {tagCode} is already assigned to {ownerDisplay}.",
+            "Tag Already Assigned",
+            MessageBoxButtons.OK,
+            MessageBoxIcon.Error);
+    }
+
+    private void UpdateTagStatus(int tagCount)
+    {
+        _tagStatusValueLabel.Text = tagCount > 0 ? "Tags assigned" : "Tags not assigned";
+        _tagStatusDetailLabel.Text = tagCount > 0 ? $"{tagCount} tag(s) entered" : string.Empty;
+    }
+
+    private static List<string> ParseTagCodes(string value)
+    {
+        return value
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(tagCode => !string.IsNullOrWhiteSpace(tagCode))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
     private static string NormalizeTagCodes(string value)
     {
-        return string.Join(",",
-            value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                .Where(item => !string.IsNullOrWhiteSpace(item))
-                .Select(item => item.ToUpperInvariant()));
+        return string.Join(",", ParseTagCodes(value).Select(item => item.ToUpperInvariant()));
     }
 
     private void SetStatus(string message, bool isError = false)

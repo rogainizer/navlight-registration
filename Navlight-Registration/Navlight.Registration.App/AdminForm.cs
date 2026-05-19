@@ -548,9 +548,11 @@ public sealed class AdminForm : Form
         var searchTerm = _teamSearchTextBox.Text.Trim();
         if (!string.IsNullOrWhiteSpace(searchTerm))
         {
-            filteredTeams = filteredTeams.Where(team =>
-                team.TeamNumber.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) ||
-                team.TeamName.Contains(searchTerm, StringComparison.OrdinalIgnoreCase));
+            filteredTeams = IsTagSearchTerm(searchTerm)
+                ? filteredTeams.Where(team => HasTagCode(team, searchTerm))
+                : filteredTeams.Where(team =>
+                    team.TeamNumber.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) ||
+                    team.TeamName.Contains(searchTerm, StringComparison.OrdinalIgnoreCase));
         }
 
         filteredTeams = SortTeams(filteredTeams);
@@ -680,5 +682,17 @@ public sealed class AdminForm : Form
         return int.TryParse(teamNumber, out var parsedTeamNumber)
             ? parsedTeamNumber
             : int.MaxValue;
+    }
+
+    private static bool IsTagSearchTerm(string searchTerm)
+    {
+        return searchTerm.Length == 4 && searchTerm.All(char.IsLetter);
+    }
+
+    private static bool HasTagCode(AdminTeamOverviewRow team, string searchTerm)
+    {
+        return team.Tags
+            .Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
+            .Any(tag => tag.Equals(searchTerm, StringComparison.OrdinalIgnoreCase));
     }
 }

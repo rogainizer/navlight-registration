@@ -6,17 +6,22 @@ namespace Navlight.Registration.App;
 
 public sealed class AdminTeamEditDialog : Form
 {
+    private const int MaximumAssignedTagCount = 3;
+    private static readonly TimeSpan AdditionalTagWaitTimeout = TimeSpan.FromSeconds(10);
     private const string CopyCompetitorColumnName = "CopyCompetitor";
     private const string RemoveCompetitorColumnName = "RemoveCompetitor";
 
     private readonly int? _teamId;
     private readonly RegistrationRepository _repository;
+    private readonly NavLightTagReader _tagReader;
+    private readonly TagReaderOptions _tagReaderOptions;
     private readonly TextBox _teamNumberTextBox;
     private readonly TextBox _teamNameTextBox;
     private readonly ComboBox _categoryComboBox;
     private readonly ComboBox _courseComboBox;
     private readonly CheckBox _registeredCheckBox;
     private readonly TextBox _tagCodesTextBox;
+    private readonly Button _assignTagButton;
     private readonly DataGridView _competitorsGrid;
     private readonly Button _saveButton;
     private readonly Button _cancelButton;
@@ -32,6 +37,8 @@ public sealed class AdminTeamEditDialog : Form
     {
         _teamId = teamId;
         _repository = new RegistrationRepository(DatabaseOptions.Load());
+        _tagReader = new NavLightTagReader();
+        _tagReaderOptions = TagReaderOptions.Load();
         _copyActionIcon = CreateCopyActionIcon();
         _pasteActionIcon = CreatePasteActionIcon();
         _deleteActionIcon = CreateDeleteActionIcon();
@@ -111,6 +118,7 @@ public sealed class AdminTeamEditDialog : Form
         _tagCodesTextBox = new TextBox
         {
             Dock = DockStyle.Fill,
+            Margin = new Padding(0, 4, 0, 4),
             PlaceholderText = "Enter tag codes, separated by commas"
         };
 
@@ -157,17 +165,45 @@ public sealed class AdminTeamEditDialog : Form
         detailsLayout.Controls.Add(_competitorsGrid, 0, 6);
         detailsLayout.SetColumnSpan(_competitorsGrid, 2);
 
+        var tagHeaderPanel = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            ColumnCount = 3,
+            RowCount = 1,
+            Margin = new Padding(0, 0, 0, 8)
+        };
+        tagHeaderPanel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        tagHeaderPanel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        tagHeaderPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        tagHeaderPanel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+
         var tagsLabel = new Label
         {
             Text = "Tag Codes",
             AutoSize = true,
             Font = new Font(Font, FontStyle.Bold),
-            Margin = new Padding(0, 0, 0, 8)
+            Anchor = AnchorStyles.Left,
+            Margin = new Padding(0, 8, 12, 8)
         };
-        detailsLayout.Controls.Add(tagsLabel, 0, 7);
-        detailsLayout.SetColumnSpan(tagsLabel, 2);
-        detailsLayout.Controls.Add(_tagCodesTextBox, 0, 8);
-        detailsLayout.SetColumnSpan(_tagCodesTextBox, 2);
+        tagHeaderPanel.Controls.Add(tagsLabel, 0, 0);
+
+        _assignTagButton = new Button
+        {
+            Text = "Assign Tag",
+            AutoSize = true,
+            Anchor = AnchorStyles.Left,
+            Height = 36,
+            Enabled = false,
+            Margin = new Padding(0, 0, 12, 0)
+        };
+        _assignTagButton.Click += AssignTagButton_Click;
+        tagHeaderPanel.Controls.Add(_assignTagButton, 1, 0);
+        tagHeaderPanel.Controls.Add(_tagCodesTextBox, 2, 0);
+
+        detailsLayout.Controls.Add(tagHeaderPanel, 0, 7);
+        detailsLayout.SetColumnSpan(tagHeaderPanel, 2);
 
         _saveButton = new Button
         {
@@ -440,12 +476,133 @@ public sealed class AdminTeamEditDialog : Form
 
         try
         {
+            var conflict = await _repository.GetFirstTagAssignmentConflictAsync(_team.TagCodes, _teamId);
+            if (conflict.HasValue)
+            {
+                ShowTagAssignmentConflict(conflict.Value.TagCode, conflict.Value.OwnerDisplay);
+                return;
+            }
+
             await _repository.SaveAdminTeamAsync(_team);
             DialogResult = DialogResult.OK;
             Close();
         }
         catch (Exception ex)
         {
+            SetStatus(ex.Message, true);
+        }
+        finally
+        {
+            ToggleBusyState(false);
+        }
+    }
+
+    private async void AssignTagButton_Click(object? sender, EventArgs e)
+    {
+        if (_team is null)
+        {
+            return;
+        }
+
+        if (!_tagReaderOptions.IsConfigured)
+        {
+            SetStatus("Tag reader COM port is not configured. Set TagReader.PortName in appsettings.json.", true);
+            return;
+        }
+
+        var tagCodes = _tagCodesTextBox.Text
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(tagCode => !string.IsNullOrWhiteSpace(tagCode))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (tagCodes.Count >= MaximumAssignedTagCount)
+        {
+            SetStatus($"A maximum of {MaximumAssignedTagCount} tags can be assigned.", true);
+            return;
+        }
+
+        ToggleBusyState(true, $"Waiting for tag on {_tagReaderOptions.PortName}...");
+        var progressDialog = new TagAssignmentProgressDialog(tagCodes, MaximumAssignedTagCount);
+        using var assignmentCancellation = new CancellationTokenSource();
+        progressDialog.StopRequested += (_, _) => assignmentCancellation.Cancel();
+        progressDialog.Show(this);
+        var timedOutWaitingForAdditionalTag = false;
+        var stoppedByUser = false;
+
+        try
+        {
+            while (tagCodes.Count < MaximumAssignedTagCount)
+            {
+                var isFirstTag = tagCodes.Count == 0;
+                progressDialog.SetStatus(isFirstTag
+                    ? $"Waiting for first tag on {_tagReaderOptions.PortName}..."
+                    : $"Waiting up to {AdditionalTagWaitTimeout.TotalSeconds:0} seconds for another tag...");
+
+                NavLightTagReadResult tag;
+                try
+                {
+                    tag = await _tagReader.ReadAndClearTagAsync(
+                        _tagReaderOptions.PortName,
+                        assignmentCancellation.Token,
+                        _tagReaderOptions.ResponseTimeout,
+                        isFirstTag ? _tagReaderOptions.TagDetectTimeout : AdditionalTagWaitTimeout,
+                        _tagReaderOptions.ResetInterface);
+                }
+                catch (OperationCanceledException) when (assignmentCancellation.IsCancellationRequested)
+                {
+                    stoppedByUser = true;
+                    break;
+                }
+                catch (TimeoutException) when (!isFirstTag)
+                {
+                    timedOutWaitingForAdditionalTag = true;
+                    break;
+                }
+
+                if (tagCodes.Contains(tag.TagIdAlpha, StringComparer.OrdinalIgnoreCase))
+                {
+                    progressDialog.SetStatus($"Read tag {tag.TagIdAlpha} again. Waiting for a different tag...");
+                    continue;
+                }
+
+                var assignedTo = await _repository.GetTagAssignmentOwnerDisplayAsync(tag.TagIdAlpha, _teamId);
+                if (assignedTo is not null)
+                {
+                    progressDialog.SetStatus($"Tag {tag.TagIdAlpha} is already assigned to {assignedTo}.");
+                    ShowTagAssignmentConflict(tag.TagIdAlpha, assignedTo);
+                    continue;
+                }
+
+                tagCodes.Add(tag.TagIdAlpha);
+                progressDialog.AddTag(tag.TagIdAlpha);
+                progressDialog.SetStatus($"Read tag {tag.TagIdAlpha}.");
+
+                _tagCodesTextBox.Text = string.Join(", ", tagCodes);
+                _tagCodesTextBox.SelectionStart = _tagCodesTextBox.TextLength;
+            }
+
+            var assignedCount = tagCodes.Count;
+            var completeMessage = stoppedByUser
+                ? assignedCount == 1
+                    ? "Stopped after reading 1 tag."
+                    : $"Stopped after reading {assignedCount} tags."
+                : assignedCount == 1
+                    ? "Finished assigning 1 tag."
+                    : $"Finished assigning {assignedCount} tags.";
+            progressDialog.Complete(completeMessage, autoClose: timedOutWaitingForAdditionalTag);
+            SetStatus(completeMessage);
+            BeginInvoke(() =>
+            {
+                if (_saveButton.Enabled && Visible)
+                {
+                    _saveButton.Focus();
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            progressDialog.Complete(ex.Message);
             SetStatus(ex.Message, true);
         }
         finally
@@ -603,6 +760,7 @@ public sealed class AdminTeamEditDialog : Form
         _courseComboBox.Enabled = !busy;
         _registeredCheckBox.Enabled = !busy;
         _tagCodesTextBox.Enabled = !busy;
+        _assignTagButton.Enabled = !busy && _tagReaderOptions.IsConfigured;
         _competitorsGrid.Enabled = !busy;
         _saveButton.Enabled = !busy;
         _cancelButton.Enabled = !busy;
@@ -610,6 +768,16 @@ public sealed class AdminTeamEditDialog : Form
         {
             SetStatus(status);
         }
+    }
+
+    private void ShowTagAssignmentConflict(string tagCode, string ownerDisplay)
+    {
+        MessageBox.Show(
+            this,
+            $"Tag {tagCode} is already assigned to {ownerDisplay}.",
+            "Tag Already Assigned",
+            MessageBoxButtons.OK,
+            MessageBoxIcon.Error);
     }
 
     private void SetStatus(string message, bool isError = false)

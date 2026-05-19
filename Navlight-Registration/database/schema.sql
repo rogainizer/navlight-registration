@@ -1,5 +1,5 @@
-CREATE DATABASE IF NOT EXISTS navlight_registration;
-USE navlight_registration;
+CREATE DATABASE IF NOT EXISTS `navlight-registration`;
+USE `navlight-registration`;
 
 CREATE TABLE IF NOT EXISTS Event (
 	EventId INT NOT NULL AUTO_INCREMENT PRIMARY KEY,

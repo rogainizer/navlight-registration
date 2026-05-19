@@ -8,7 +8,7 @@ if (-not (Test-Path -LiteralPath $projectPath)) {
 }
 
 Write-Host "Starting Navlight Registration in development mode..."
-Write-Host "Database target: 127.0.0.1:3306 / navlight_registration"
+Write-Host "Database target: 127.0.0.1:3306 / navlight-registration"
 
 Set-Location $projectRoot
 & dotnet run --project $projectPath

@@ -1,4 +1,4 @@
-USE navlight_registration;
+USE `navlight-registration`;
 
 -- Clear existing sample data in dependency order.
 DELETE FROM TagAssignment;
