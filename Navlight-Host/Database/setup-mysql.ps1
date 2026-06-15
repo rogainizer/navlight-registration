@@ -112,8 +112,8 @@ $null = New-Item -ItemType File -Path $serverStdOutPath -Force
 $null = New-Item -ItemType File -Path $serverStdErrPath -Force
 
 $serverProcess = Start-Process -FilePath $mysqldPath -ArgumentList @(
-    "--basedir=$mysqlRoot",
-    "--datadir=$dataRoot",
+    "--basedir=`"$mysqlRoot`"",
+    "--datadir=`"$dataRoot`"",
     "--port=$Port"
 ) -RedirectStandardOutput $serverStdOutPath -RedirectStandardError $serverStdErrPath -PassThru
 
@@ -138,7 +138,7 @@ try {
             "Bootstrap STDERR log: $serverStdErrPath"
         )
 
-        if ($serverExitCode -ne $null) {
+        if ($null -ne $serverExitCode) {
             $details += "mysqld exited early with code $serverExitCode."
         }
 
