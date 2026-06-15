@@ -53,10 +53,12 @@ if ($LASTEXITCODE -ne 0) {
 $appTargetDir = Join-Path $payloadRoot "Navlight.Registration.App"
 $databaseTargetDir = Join-Path $payloadRoot "Database"
 $samplesTargetDir = Join-Path $payloadRoot "Samples"
+$utilitiesTargetDir = Join-Path $bundleRoot "Utilities"
 
 Copy-Item -Path $publishDir -Destination $appTargetDir -Recurse
 New-Item -ItemType Directory -Path $databaseTargetDir | Out-Null
 New-Item -ItemType Directory -Path $samplesTargetDir | Out-Null
+New-Item -ItemType Directory -Path $utilitiesTargetDir | Out-Null
 
 Copy-Item -LiteralPath (Join-Path $registrationRoot "Navlight.Registration.App\appsettings.example.json") -Destination (Join-Path $appTargetDir "appsettings.example.json")
 Copy-Item -LiteralPath (Join-Path $hostRoot "Database\setup-mysql.ps1") -Destination (Join-Path $databaseTargetDir "setup-mysql.ps1")
@@ -66,8 +68,11 @@ Copy-Item -LiteralPath (Join-Path $registrationRoot "database\schema.sql") -Dest
 Copy-Item -LiteralPath (Join-Path $registrationRoot "database\test-data.sql") -Destination (Join-Path $databaseTargetDir "test-data.sql")
 Copy-Item -LiteralPath (Join-Path $registrationRoot "Navlight.Registration.App\EntryLists\Entries.xlsx") -Destination (Join-Path $samplesTargetDir "Entries.xlsx")
 Copy-Item -LiteralPath (Join-Path $registrationRoot "get-dhcp-reservation-info.ps1") -Destination (Join-Path $bundleRoot "get-dhcp-reservation-info.ps1")
-Copy-Item -LiteralPath (Join-Path $repoRoot "Find-NavlightReaderPort.ps1") -Destination (Join-Path $bundleRoot "Find-NavlightReaderPort.ps1")
 Copy-Item -LiteralPath (Join-Path $repoRoot "install-navlight.ps1") -Destination (Join-Path $bundleRoot "install-navlight.ps1")
+Copy-Item -LiteralPath (Join-Path $repoRoot "Find-NavlightReaderPort.ps1") -Destination (Join-Path $utilitiesTargetDir "Find-NavlightReaderPort.ps1")
+Copy-Item -LiteralPath (Join-Path $repoRoot "Read-NavlightTagId.ps1") -Destination (Join-Path $utilitiesTargetDir "Read-NavlightTagId.ps1")
+Copy-Item -LiteralPath (Join-Path $repoRoot "Clear-NavlightTag.ps1") -Destination (Join-Path $utilitiesTargetDir "Clear-NavlightTag.ps1")
+Copy-Item -LiteralPath (Join-Path $repoRoot "CP210x_Windows_Drivers.zip") -Destination (Join-Path $utilitiesTargetDir "CP210x_Windows_Drivers.zip")
 
 $readmePath = Join-Path $bundleRoot "README.txt"
 @"
@@ -77,10 +82,13 @@ Version: $releaseVersion
 Files:
 - install-navlight.ps1 : installs ClientOnly, HostAndClient, or SingleUser roles
 - get-dhcp-reservation-info.ps1 : shows the host PC IPv4 and MAC address for router DHCP reservation setup
-- Find-NavlightReaderPort.ps1 : scans COM ports to find the NavLight reader
 - payload\Navlight.Registration.App : published desktop app
 - payload\Database : MySQL setup/start/stop scripts and schema files
 - payload\Samples\Entries.xlsx : sample spreadsheet installed for HostAndClient and SingleUser
+- Utilities\Find-NavlightReaderPort.ps1 : scans COM ports to find the NavLight reader
+- Utilities\Read-NavlightTagId.ps1 : reads the current NavLight tag contents
+- Utilities\Clear-NavlightTag.ps1 : clears the current NavLight tag contents
+- Utilities\CP210x_Windows_Drivers.zip : Silicon Labs USB serial drivers for the reader
 
 If you do not pass -InstallRoot, the installer will prompt for the install folder and suggest .\NavlightRegistration.
 
