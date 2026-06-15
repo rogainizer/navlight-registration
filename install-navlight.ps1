@@ -1,6 +1,6 @@
 [CmdletBinding(SupportsShouldProcess = $true)]
 param(
-    [ValidateSet("ClientOnly", "HostAndClient")]
+    [ValidateSet("ClientOnly", "HostAndClient", "SingleUser")]
     [string]$InstallMode,
     [string]$InstallRoot,
     [string]$DatabaseServer = "navlighthost",
@@ -217,16 +217,21 @@ if ([string]::IsNullOrWhiteSpace($InstallMode)) {
     Write-Host "Choose installation mode:"
     Write-Host "1. Client only"
     Write-Host "2. Host and client"
+    Write-Host "3. Single user"
     do {
-        $selection = Read-Host "Enter 1 or 2"
+        $selection = Read-Host "Enter 1, 2, or 3"
     }
-    until ($selection -in @("1", "2"))
+    until ($selection -in @("1", "2", "3"))
 
-    $InstallMode = if ($selection -eq "1") { "ClientOnly" } else { "HostAndClient" }
+    $InstallMode = switch ($selection) {
+        "1" { "ClientOnly" }
+        "2" { "HostAndClient" }
+        default { "SingleUser" }
+    }
 }
 
 if ([string]::IsNullOrWhiteSpace($InstallRoot)) {
-    $defaultInstallRoot = Join-Path $env:USERPROFILE "NavlightRegistration"
+    $defaultInstallRoot = Join-Path (Get-Location).Path "NavlightRegistration"
     $InstallRoot = Read-ValueWithDefault -Prompt "Install folder" -DefaultValue $defaultInstallRoot
 }
 
@@ -247,6 +252,7 @@ $scriptRoot = $PSScriptRoot
 $payloadRoot = Join-Path $scriptRoot "payload"
 $sourceAppDir = Join-Path $payloadRoot "Navlight.Registration.App"
 $sourceDatabaseDir = Join-Path $payloadRoot "Database"
+$sourceSampleEntriesPath = Join-Path $payloadRoot "Samples\Entries.xlsx"
 
 if (-not (Test-Path -LiteralPath $sourceAppDir)) {
     throw "The release payload was not found. Expected '$sourceAppDir'."
@@ -260,6 +266,7 @@ Ensure-Directory -Path $InstallRoot
 
 $targetAppDir = Join-Path $InstallRoot "Navlight.Registration.App"
 $targetDatabaseDir = Join-Path $InstallRoot "Database"
+$targetEntryListsDir = Join-Path $targetAppDir "EntryLists"
 
 if ($PSCmdlet.ShouldProcess($InstallRoot, "Install Navlight files")) {
     if (Test-Path -LiteralPath $targetAppDir) {
@@ -270,7 +277,10 @@ if ($PSCmdlet.ShouldProcess($InstallRoot, "Install Navlight files")) {
 }
 
 $plainDatabasePassword = Get-PlainText -Value $DatabasePassword
-$resolvedDatabaseServer = if ([string]::IsNullOrWhiteSpace($DatabaseServer)) {
+$resolvedDatabaseServer = if ($InstallMode -eq "SingleUser") {
+    "localhost"
+}
+elseif ([string]::IsNullOrWhiteSpace($DatabaseServer)) {
     "navlighthost"
 }
 else {
@@ -307,7 +317,12 @@ if ($InstallMode -eq "HostAndClient") {
 
 Write-AppSettings -Path (Join-Path $targetAppDir "appsettings.json") -Server $resolvedDatabaseServer -Port $DatabasePort -Name $DatabaseName -User $DatabaseUser -Password $plainDatabasePassword
 
-if ($InstallMode -eq "HostAndClient") {
+if ($InstallMode -in @("HostAndClient", "SingleUser")) {
+    if (Test-Path -LiteralPath $sourceSampleEntriesPath) {
+        Ensure-Directory -Path $targetEntryListsDir
+        Copy-Item -LiteralPath $sourceSampleEntriesPath -Destination (Join-Path $targetEntryListsDir "Entries.xlsx") -Force
+    }
+
     if ($PSCmdlet.ShouldProcess($targetDatabaseDir, "Install host database files")) {
         if (Test-Path -LiteralPath $targetDatabaseDir) {
             Remove-Item -LiteralPath $targetDatabaseDir -Recurse -Force
@@ -354,7 +369,7 @@ Ensure-Directory -Path $startMenuFolder
 Install-Shortcut -ShortcutPath (Join-Path $desktopPath "Navlight Registration.lnk") -TargetPath (Join-Path $targetAppDir "Navlight.Registration.App.exe") -WorkingDirectory $targetAppDir
 Install-Shortcut -ShortcutPath (Join-Path $startMenuFolder "Navlight Registration.lnk") -TargetPath (Join-Path $targetAppDir "Navlight.Registration.App.exe") -WorkingDirectory $targetAppDir
 
-if ($InstallMode -eq "HostAndClient") {
+if ($InstallMode -in @("HostAndClient", "SingleUser")) {
     $powerShellExe = Join-Path $PSHOME "powershell.exe"
     $startMySqlScript = Join-Path $targetDatabaseDir "start-mysql.ps1"
     $stopMySqlScript = Join-Path $targetDatabaseDir "stop-mysql.ps1"
