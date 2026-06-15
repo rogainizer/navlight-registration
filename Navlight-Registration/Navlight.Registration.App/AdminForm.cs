@@ -6,17 +6,27 @@ namespace Navlight.Registration.App;
 
 public sealed class AdminForm : Form
 {
+    private const string AllFilterOption = "All";
+    private const string FlightPlanReturnedOption = "Returned";
+    private const string FlightPlanNotReturnedOption = "Not returned";
     private const string EditColumnName = "EditTeam";
     private const string DeleteColumnName = "DeleteTeam";
+    private const int FilterHeaderIconPadding = 20;
 
     private readonly RegistrationRepository _repository;
     private readonly DataGridView _teamsGrid;
     private readonly TextBox _teamSearchTextBox;
+    private readonly ComboBox _categoryFilterComboBox;
+    private readonly ComboBox _courseFilterComboBox;
+    private readonly ComboBox _flightPlanFilterComboBox;
+    private readonly ComboBox _statusFilterComboBox;
     private readonly Button _clearDatabaseButton;
     private readonly Button _exportButton;
     private readonly Button _loadButton;
     private readonly Button _printButton;
     private readonly Button _refreshButton;
+    private readonly Button _closeButton;
+    private readonly ContextMenuStrip _headerFilterMenu;
     private readonly Label _statusLabel;
     private readonly Bitmap _editActionIcon;
     private readonly Bitmap _deleteActionIcon;
@@ -24,6 +34,7 @@ public sealed class AdminForm : Form
     private IReadOnlyList<AdminTeamOverviewRow> _allTeams = [];
     private string _sortPropertyName = nameof(AdminTeamOverviewRow.TeamNumber);
     private SortOrder _sortOrder = SortOrder.Ascending;
+    private bool _suppressFilterChangeHandling;
 
     public AdminForm()
     {
@@ -35,6 +46,7 @@ public sealed class AdminForm : Form
         _editActionIcon = CreateEditActionIcon();
         _deleteActionIcon = CreateDeleteActionIcon();
         _addActionIcon = CreateAddActionIcon();
+        _headerFilterMenu = new ContextMenuStrip();
 
         var rootLayout = new TableLayoutPanel
         {
@@ -50,8 +62,8 @@ public sealed class AdminForm : Form
         var headingPanel = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
-            ColumnCount = 7,
-            RowCount = 2,
+            ColumnCount = 8,
+            RowCount = 3,
             Margin = new Padding(0, 0, 0, 12)
         };
         headingPanel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
@@ -61,6 +73,8 @@ public sealed class AdminForm : Form
         headingPanel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         headingPanel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         headingPanel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        headingPanel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        headingPanel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         headingPanel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         headingPanel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
 
@@ -87,6 +101,20 @@ public sealed class AdminForm : Form
             Margin = new Padding(0, 4, 12, 0)
         };
         _teamSearchTextBox.TextChanged += (_, _) => ApplyTeamView();
+
+        _categoryFilterComboBox = CreateFilterComboBox();
+        _categoryFilterComboBox.SelectedIndexChanged += (_, _) => ApplyFilterViewIfReady();
+        _courseFilterComboBox = CreateFilterComboBox();
+        _courseFilterComboBox.SelectedIndexChanged += (_, _) => ApplyFilterViewIfReady();
+        _flightPlanFilterComboBox = CreateFilterComboBox();
+        _flightPlanFilterComboBox.SelectedIndexChanged += (_, _) => ApplyFilterViewIfReady();
+        _statusFilterComboBox = CreateFilterComboBox();
+        _statusFilterComboBox.SelectedIndexChanged += (_, _) => ApplyFilterViewIfReady();
+
+        _suppressFilterChangeHandling = true;
+        SetFilterItems(_flightPlanFilterComboBox, [AllFilterOption, FlightPlanReturnedOption, FlightPlanNotReturnedOption]);
+        SetFilterItems(_statusFilterComboBox, [AllFilterOption]);
+        _suppressFilterChangeHandling = false;
 
         _clearDatabaseButton = new Button
         {
@@ -135,10 +163,24 @@ public sealed class AdminForm : Form
             Height = 36,
             Anchor = AnchorStyles.Right
         };
-        _refreshButton.Click += async (_, _) => await LoadTeamsAsync();
+        _refreshButton.Click += async (_, _) =>
+        {
+            ResetFilters();
+            await LoadTeamsAsync();
+        };
+
+        _closeButton = new Button
+        {
+            Text = "Close",
+            AutoSize = true,
+            Height = 36,
+            Anchor = AnchorStyles.Right,
+            Margin = new Padding(8, 0, 0, 0)
+        };
+        _closeButton.Click += CloseButton_Click;
 
         headingPanel.Controls.Add(headingLabel, 0, 0);
-    headingPanel.SetColumnSpan(headingLabel, 7);
+    headingPanel.SetColumnSpan(headingLabel, 8);
         headingPanel.Controls.Add(searchLabel, 0, 1);
         headingPanel.Controls.Add(_teamSearchTextBox, 1, 1);
         headingPanel.Controls.Add(_clearDatabaseButton, 2, 1);
@@ -146,6 +188,46 @@ public sealed class AdminForm : Form
     headingPanel.Controls.Add(_loadButton, 4, 1);
     headingPanel.Controls.Add(_printButton, 5, 1);
     headingPanel.Controls.Add(_refreshButton, 6, 1);
+    headingPanel.Controls.Add(_closeButton, 7, 1);
+
+        var filterLayout = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 8,
+            RowCount = 1,
+            AutoSize = true,
+            Margin = new Padding(0)
+        };
+        filterLayout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        filterLayout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        filterLayout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        filterLayout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        filterLayout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        filterLayout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        filterLayout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        filterLayout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        filterLayout.Controls.Add(CreateFilterLabel("Category"), 0, 0);
+        filterLayout.Controls.Add(_categoryFilterComboBox, 1, 0);
+        filterLayout.Controls.Add(CreateFilterLabel("Course"), 2, 0);
+        filterLayout.Controls.Add(_courseFilterComboBox, 3, 0);
+        filterLayout.Controls.Add(CreateFilterLabel("Flight Plan"), 4, 0);
+        filterLayout.Controls.Add(_flightPlanFilterComboBox, 5, 0);
+        filterLayout.Controls.Add(CreateFilterLabel("Status"), 6, 0);
+        filterLayout.Controls.Add(_statusFilterComboBox, 7, 0);
+
+        var filterGroup = new GroupBox
+        {
+            Text = "Filters",
+            Dock = DockStyle.Fill,
+            AutoSize = true,
+            Margin = new Padding(0, 8, 0, 0),
+            Padding = new Padding(12, 10, 12, 12)
+        };
+        filterGroup.Controls.Add(filterLayout);
+        filterGroup.Visible = false;
+
+        headingPanel.Controls.Add(filterGroup, 0, 2);
+        headingPanel.SetColumnSpan(filterGroup, 8);
 
         _teamsGrid = new DataGridView
         {
@@ -171,6 +253,7 @@ public sealed class AdminForm : Form
         _teamsGrid.Columns.Add(CreateTextColumn(nameof(AdminTeamOverviewRow.CourseName), "Course", 140));
         _teamsGrid.Columns.Add(CreateFillColumn(nameof(AdminTeamOverviewRow.Competitors), "Competitors", 260));
         _teamsGrid.Columns.Add(CreateFillColumn(nameof(AdminTeamOverviewRow.Tags), "Tags", 200));
+        _teamsGrid.Columns.Add(CreateBooleanColumn(nameof(AdminTeamOverviewRow.FlightPlan), "Flight Plan", 90));
         _teamsGrid.Columns.Add(CreateFillColumn(nameof(AdminTeamOverviewRow.Status), "Status", 180));
         _teamsGrid.Columns.Add(CreateActionColumn(EditColumnName, _editActionIcon, "Edit team"));
         _teamsGrid.Columns.Add(CreateActionColumn(DeleteColumnName, _deleteActionIcon, "Delete team"));
@@ -178,6 +261,7 @@ public sealed class AdminForm : Form
         _teamsGrid.ColumnHeaderMouseClick += TeamsGrid_ColumnHeaderMouseClick;
         _teamsGrid.CellContentClick += TeamsGrid_CellContentClick;
         _teamsGrid.CellToolTipTextNeeded += TeamsGrid_CellToolTipTextNeeded;
+        UpdateFilterHeaderCaptions();
 
         _statusLabel = new Label
         {
@@ -220,6 +304,200 @@ public sealed class AdminForm : Form
             WrapMode = DataGridViewTriState.True
         }
     };
+
+    private static DataGridViewCheckBoxColumn CreateBooleanColumn(string propertyName, string headerText, int width) => new()
+    {
+        DataPropertyName = propertyName,
+        HeaderText = headerText,
+        Width = width,
+        AutoSizeMode = DataGridViewAutoSizeColumnMode.None,
+        SortMode = DataGridViewColumnSortMode.Programmatic,
+        ReadOnly = true,
+        ThreeState = false
+    };
+
+    private static Label CreateFilterLabel(string text) => new()
+    {
+        Text = text,
+        AutoSize = true,
+        Anchor = AnchorStyles.Left,
+        Margin = new Padding(0, 8, 8, 0)
+    };
+
+    private static ComboBox CreateFilterComboBox() => new()
+    {
+        DropDownStyle = ComboBoxStyle.DropDownList,
+        Width = 140,
+        Margin = new Padding(0, 4, 16, 0)
+    };
+
+    private static void SetFilterItems(ComboBox comboBox, IReadOnlyList<string> items)
+    {
+        comboBox.BeginUpdate();
+        try
+        {
+            comboBox.Items.Clear();
+            comboBox.Items.AddRange(items.ToArray());
+            comboBox.SelectedIndex = comboBox.Items.Count > 0 ? 0 : -1;
+        }
+        finally
+        {
+            comboBox.EndUpdate();
+        }
+    }
+
+    private void UpdateFilterHeaderCaptions()
+    {
+        UpdateFilterHeaderCaption(nameof(AdminTeamOverviewRow.CategoryName), "Category");
+        UpdateFilterHeaderCaption(nameof(AdminTeamOverviewRow.CourseName), "Course");
+        UpdateFilterHeaderCaption(nameof(AdminTeamOverviewRow.FlightPlan), "Flight Plan");
+        UpdateFilterHeaderCaption(nameof(AdminTeamOverviewRow.Status), "Status");
+    }
+
+    private void UpdateFilterHeaderCaption(string propertyName, string baseHeaderText)
+    {
+        var column = _teamsGrid.Columns
+            .Cast<DataGridViewColumn>()
+            .FirstOrDefault(item => item.DataPropertyName == propertyName);
+        if (column is null)
+        {
+            return;
+        }
+
+        column.HeaderText = baseHeaderText;
+        column.HeaderCell.Style.Padding = new Padding(0, 0, FilterHeaderIconPadding, 0);
+        _teamsGrid.InvalidateColumn(column.Index);
+    }
+
+    private bool HasActiveFilter(string propertyName)
+    {
+        var comboBox = GetFilterComboBox(propertyName);
+        return comboBox.SelectedItem is string selectedValue
+            && !string.Equals(selectedValue, AllFilterOption, StringComparison.Ordinal);
+    }
+
+    private ComboBox GetFilterComboBox(string propertyName)
+    {
+        return propertyName switch
+        {
+            nameof(AdminTeamOverviewRow.CategoryName) => _categoryFilterComboBox,
+            nameof(AdminTeamOverviewRow.CourseName) => _courseFilterComboBox,
+            nameof(AdminTeamOverviewRow.FlightPlan) => _flightPlanFilterComboBox,
+            nameof(AdminTeamOverviewRow.Status) => _statusFilterComboBox,
+            _ => throw new InvalidOperationException($"No filter is configured for column '{propertyName}'.")
+        };
+    }
+
+    private static bool IsFilterableColumn(string propertyName)
+    {
+        return propertyName is nameof(AdminTeamOverviewRow.CategoryName)
+            or nameof(AdminTeamOverviewRow.CourseName)
+            or nameof(AdminTeamOverviewRow.FlightPlan)
+            or nameof(AdminTeamOverviewRow.Status);
+    }
+
+    private void ShowHeaderFilterMenu(DataGridViewColumn column)
+    {
+        var propertyName = column.DataPropertyName;
+        if (string.IsNullOrWhiteSpace(propertyName))
+        {
+            return;
+        }
+
+        var comboBox = GetFilterComboBox(propertyName);
+        _headerFilterMenu.Items.Clear();
+
+        var sortAscendingItem = new ToolStripMenuItem("Sort Ascending");
+        sortAscendingItem.Click += (_, _) =>
+        {
+            _sortPropertyName = propertyName;
+            _sortOrder = SortOrder.Ascending;
+            ApplyTeamView();
+        };
+        _headerFilterMenu.Items.Add(sortAscendingItem);
+
+        var sortDescendingItem = new ToolStripMenuItem("Sort Descending");
+        sortDescendingItem.Click += (_, _) =>
+        {
+            _sortPropertyName = propertyName;
+            _sortOrder = SortOrder.Descending;
+            ApplyTeamView();
+        };
+        _headerFilterMenu.Items.Add(sortDescendingItem);
+        _headerFilterMenu.Items.Add(new ToolStripSeparator());
+
+        foreach (var item in comboBox.Items.Cast<object>().OfType<string>())
+        {
+            var filterItem = new ToolStripMenuItem(item)
+            {
+                Checked = string.Equals(comboBox.SelectedItem as string, item, StringComparison.Ordinal)
+            };
+            filterItem.Click += (_, _) => comboBox.SelectedItem = item;
+            _headerFilterMenu.Items.Add(filterItem);
+        }
+
+        var headerBounds = _teamsGrid.GetCellDisplayRectangle(column.Index, -1, true);
+        _headerFilterMenu.Show(_teamsGrid, new Point(headerBounds.Left, headerBounds.Bottom));
+    }
+
+    private void ApplyFilterViewIfReady()
+    {
+        if (_suppressFilterChangeHandling)
+        {
+            return;
+        }
+
+        UpdateFilterHeaderCaptions();
+        ApplyTeamView();
+    }
+
+    private void ResetFilters()
+    {
+        _suppressFilterChangeHandling = true;
+        try
+        {
+            ResetFilterSelection(_categoryFilterComboBox);
+            ResetFilterSelection(_courseFilterComboBox);
+            ResetFilterSelection(_flightPlanFilterComboBox);
+            ResetFilterSelection(_statusFilterComboBox);
+        }
+        finally
+        {
+            _suppressFilterChangeHandling = false;
+        }
+
+        UpdateFilterHeaderCaptions();
+    }
+
+    private static void ResetFilterSelection(ComboBox comboBox)
+    {
+        comboBox.SelectedIndex = comboBox.Items.Count > 0 ? 0 : -1;
+    }
+
+    private static void UpdateFilterItems(ComboBox comboBox, IReadOnlyList<string> items)
+    {
+        var selectedValue = comboBox.SelectedItem as string;
+
+        comboBox.BeginUpdate();
+        try
+        {
+            comboBox.Items.Clear();
+            comboBox.Items.AddRange(items.ToArray());
+
+            if (!string.IsNullOrWhiteSpace(selectedValue) && comboBox.Items.Contains(selectedValue))
+            {
+                comboBox.SelectedItem = selectedValue;
+            }
+            else
+            {
+                comboBox.SelectedIndex = comboBox.Items.Count > 0 ? 0 : -1;
+            }
+        }
+        finally
+        {
+            comboBox.EndUpdate();
+        }
+    }
 
     private static DataGridViewImageColumn CreateActionColumn(string name, Bitmap image, string tooltipText) => new()
     {
@@ -304,6 +582,7 @@ public sealed class AdminForm : Form
         try
         {
             _allTeams = await _repository.GetAdminTeamOverviewAsync();
+            UpdateFilterOptions();
             ApplyTeamView();
         }
         catch (Exception ex)
@@ -333,6 +612,13 @@ public sealed class AdminForm : Form
 
         try
         {
+            var visibleTeams = GetVisibleTeams();
+            if (visibleTeams.Count == 0)
+            {
+                SetStatus("No teams are currently displayed to print.", true);
+                return;
+            }
+
             var eventId = await _repository.GetDefaultEventIdAsync();
             var courses = await _repository.GetCoursesAsync(eventId);
             if (courses.Count == 0)
@@ -352,13 +638,20 @@ public sealed class AdminForm : Form
                 .Select(course => new AdminCourseReportPrinter.CourseReportSection
                 {
                     CourseName = course.Name,
-                    Rows = _allTeams
+                    Rows = visibleTeams
                         .Where(team => team.CourseName.Equals(course.Name, StringComparison.OrdinalIgnoreCase))
                         .OrderBy(team => team.CategoryName, StringComparer.OrdinalIgnoreCase)
                         .ThenBy(team => team.TeamName, StringComparer.OrdinalIgnoreCase)
                         .ToList()
                 })
+                .Where(section => section.Rows.Count > 0)
                 .ToList();
+
+            if (sections.Count == 0)
+            {
+                SetStatus("None of the currently displayed teams match the selected courses.", true);
+                return;
+            }
 
             using var document = new AdminCourseReportPrinter(sections).CreateDocument();
 
@@ -486,6 +779,11 @@ public sealed class AdminForm : Form
         }
     }
 
+    private void CloseButton_Click(object? sender, EventArgs e)
+    {
+        AppNavigation.ShowStartupScreen?.Invoke();
+    }
+
     private void TeamsGrid_ColumnHeaderMouseClick(object? sender, DataGridViewCellMouseEventArgs e)
     {
         if (e.ColumnIndex < 0)
@@ -507,6 +805,12 @@ public sealed class AdminForm : Form
 
         if (string.IsNullOrWhiteSpace(column.DataPropertyName))
         {
+            return;
+        }
+
+        if (IsFilterableColumn(column.DataPropertyName))
+        {
+            ShowHeaderFilterMenu(column);
             return;
         }
 
@@ -536,6 +840,17 @@ public sealed class AdminForm : Form
         }
 
         var columnName = _teamsGrid.Columns[e.ColumnIndex].Name;
+        var propertyName = _teamsGrid.Columns[e.ColumnIndex].DataPropertyName;
+
+        if (e.RowIndex == -1 && !string.IsNullOrWhiteSpace(propertyName) && IsFilterableColumn(propertyName))
+        {
+            e.PaintBackground(e.CellBounds, false);
+            e.PaintContent(e.CellBounds);
+            DrawFilterHeaderIcon(e.Graphics, e.CellBounds, HasActiveFilter(propertyName));
+            e.Paint(e.ClipBounds, DataGridViewPaintParts.Border);
+            e.Handled = true;
+            return;
+        }
 
         if (e.RowIndex >= 0 && (columnName == EditColumnName || columnName == DeleteColumnName))
         {
@@ -567,8 +882,44 @@ public sealed class AdminForm : Form
         e.Handled = true;
     }
 
+    private static void DrawFilterHeaderIcon(Graphics graphics, Rectangle cellBounds, bool isActive)
+    {
+        const int iconWidth = 10;
+        const int iconHeight = 10;
+
+        var iconColor = isActive ? Color.SeaGreen : Color.DimGray;
+        var iconLeft = cellBounds.Right - iconWidth - 6;
+        var iconTop = cellBounds.Top + ((cellBounds.Height - iconHeight) / 2);
+
+        Point[] funnel =
+        [
+            new(iconLeft, iconTop),
+            new(iconLeft + iconWidth, iconTop),
+            new(iconLeft + 6, iconTop + 4),
+            new(iconLeft + 4, iconTop + 4)
+        ];
+
+        using var brush = new SolidBrush(iconColor);
+        using var pen = new Pen(iconColor, 1f);
+
+        graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+        graphics.FillPolygon(brush, funnel);
+        graphics.DrawPolygon(pen, funnel);
+        graphics.FillRectangle(brush, iconLeft + 4, iconTop + 4, 2, 4);
+    }
+
     private void TeamsGrid_CellToolTipTextNeeded(object? sender, DataGridViewCellToolTipTextNeededEventArgs e)
     {
+        if (e.RowIndex == -1 && e.ColumnIndex >= 0)
+        {
+            var propertyName = _teamsGrid.Columns[e.ColumnIndex].DataPropertyName;
+            if (!string.IsNullOrWhiteSpace(propertyName) && IsFilterableColumn(propertyName))
+            {
+                e.ToolTipText = "Click to sort or filter this column.";
+                return;
+            }
+        }
+
         if (e.RowIndex >= 0 || e.ColumnIndex < 0 || _teamsGrid.Columns[e.ColumnIndex].Name != DeleteColumnName)
         {
             return;
@@ -646,6 +997,34 @@ public sealed class AdminForm : Form
                     team.TeamName.Contains(searchTerm, StringComparison.OrdinalIgnoreCase));
         }
 
+        var selectedCategory = _categoryFilterComboBox.SelectedItem as string;
+        if (!string.IsNullOrWhiteSpace(selectedCategory) && !selectedCategory.Equals(AllFilterOption, StringComparison.Ordinal))
+        {
+            filteredTeams = filteredTeams.Where(team => team.CategoryName.Equals(selectedCategory, StringComparison.OrdinalIgnoreCase));
+        }
+
+        var selectedCourse = _courseFilterComboBox.SelectedItem as string;
+        if (!string.IsNullOrWhiteSpace(selectedCourse) && !selectedCourse.Equals(AllFilterOption, StringComparison.Ordinal))
+        {
+            filteredTeams = filteredTeams.Where(team => team.CourseName.Equals(selectedCourse, StringComparison.OrdinalIgnoreCase));
+        }
+
+        var selectedFlightPlan = _flightPlanFilterComboBox.SelectedItem as string;
+        if (selectedFlightPlan == FlightPlanReturnedOption)
+        {
+            filteredTeams = filteredTeams.Where(team => team.FlightPlan);
+        }
+        else if (selectedFlightPlan == FlightPlanNotReturnedOption)
+        {
+            filteredTeams = filteredTeams.Where(team => !team.FlightPlan);
+        }
+
+        var selectedStatus = _statusFilterComboBox.SelectedItem as string;
+        if (!string.IsNullOrWhiteSpace(selectedStatus) && !selectedStatus.Equals(AllFilterOption, StringComparison.Ordinal))
+        {
+            filteredTeams = filteredTeams.Where(team => team.Status.Equals(selectedStatus, StringComparison.OrdinalIgnoreCase));
+        }
+
         filteredTeams = SortTeams(filteredTeams);
         var visibleTeams = filteredTeams.ToList();
 
@@ -656,6 +1035,58 @@ public sealed class AdminForm : Form
             ? string.Empty
             : $" matching '{searchTerm}'";
         SetStatus($"Showing {visibleTeams.Count} team(s){searchSuffix}.");
+    }
+
+    private IReadOnlyList<AdminTeamOverviewRow> GetVisibleTeams()
+    {
+        return _teamsGrid.DataSource as IReadOnlyList<AdminTeamOverviewRow>
+            ?? [];
+    }
+
+    private void UpdateFilterOptions()
+    {
+        _suppressFilterChangeHandling = true;
+        try
+        {
+        UpdateFilterItems(_categoryFilterComboBox,
+        [
+            AllFilterOption,
+            .. _allTeams
+                .Select(team => team.CategoryName)
+                .Where(name => !string.IsNullOrWhiteSpace(name))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+        ]);
+
+        UpdateFilterItems(_courseFilterComboBox,
+        [
+            AllFilterOption,
+            .. _allTeams
+                .Select(team => team.CourseName)
+                .Where(name => !string.IsNullOrWhiteSpace(name))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+        ]);
+
+        UpdateFilterItems(_flightPlanFilterComboBox,
+        [AllFilterOption, FlightPlanReturnedOption, FlightPlanNotReturnedOption]);
+
+        UpdateFilterItems(_statusFilterComboBox,
+        [
+            AllFilterOption,
+            .. _allTeams
+                .Select(team => team.Status)
+                .Where(status => !string.IsNullOrWhiteSpace(status))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(status => status, StringComparer.OrdinalIgnoreCase)
+        ]);
+        }
+        finally
+        {
+            _suppressFilterChangeHandling = false;
+        }
+
+        UpdateFilterHeaderCaptions();
     }
 
     private IEnumerable<AdminTeamOverviewRow> SortTeams(IEnumerable<AdminTeamOverviewRow> teams)
@@ -684,6 +1115,9 @@ public sealed class AdminForm : Form
             nameof(AdminTeamOverviewRow.Tags) => ascending
                 ? teams.OrderBy(team => team.Tags, StringComparer.OrdinalIgnoreCase)
                 : teams.OrderByDescending(team => team.Tags, StringComparer.OrdinalIgnoreCase),
+            nameof(AdminTeamOverviewRow.FlightPlan) => ascending
+                ? teams.OrderBy(team => team.FlightPlan)
+                : teams.OrderByDescending(team => team.FlightPlan),
             nameof(AdminTeamOverviewRow.Status) => ascending
                 ? teams.OrderBy(team => team.Status, StringComparer.OrdinalIgnoreCase)
                 : teams.OrderByDescending(team => team.Status, StringComparer.OrdinalIgnoreCase),
@@ -709,7 +1143,12 @@ public sealed class AdminForm : Form
         _loadButton.Enabled = !busy;
         _printButton.Enabled = !busy;
         _refreshButton.Enabled = !busy;
+        _closeButton.Enabled = !busy;
         _teamSearchTextBox.Enabled = !busy;
+        _categoryFilterComboBox.Enabled = !busy;
+        _courseFilterComboBox.Enabled = !busy;
+        _flightPlanFilterComboBox.Enabled = !busy;
+        _statusFilterComboBox.Enabled = !busy;
         _teamsGrid.Enabled = !busy;
         if (status is not null)
         {

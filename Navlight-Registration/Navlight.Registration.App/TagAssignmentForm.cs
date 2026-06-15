@@ -20,6 +20,7 @@ public sealed class TagAssignmentForm : Form
     private readonly Label _tagStatusValueLabel;
     private readonly Label _tagStatusDetailLabel;
     private readonly TextBox _tagCodesTextBox;
+    private readonly Button _closeButton;
     private readonly Button _readAndClearTagButton;
     private readonly Button _saveButton;
     private readonly Button _switchModeButton;
@@ -203,6 +204,7 @@ public sealed class TagAssignmentForm : Form
 
         _tagCodesTextBox = new TextBox
         {
+            CharacterCasing = CharacterCasing.Upper,
             Dock = DockStyle.Fill,
             Margin = new Padding(0, 4, 0, 4),
             PlaceholderText = "Enter tag codes, separated by commas"
@@ -234,6 +236,16 @@ public sealed class TagAssignmentForm : Form
         };
         _switchModeButton.Click += SwitchModeButton_Click;
 
+        _closeButton = new Button
+        {
+            Text = "Close",
+            AutoSize = true,
+            Anchor = AnchorStyles.Right,
+            Height = 36,
+            Margin = new Padding(0, 12, 8, 0)
+        };
+        _closeButton.Click += CloseButton_Click;
+
         var footerPanel = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
@@ -244,8 +256,10 @@ public sealed class TagAssignmentForm : Form
         footerPanel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         footerPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         footerPanel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        footerPanel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         footerPanel.Controls.Add(_saveButton, 0, 0);
-        footerPanel.Controls.Add(_switchModeButton, 2, 0);
+        footerPanel.Controls.Add(_closeButton, 2, 0);
+        footerPanel.Controls.Add(_switchModeButton, 3, 0);
 
         detailsLayout.Controls.Add(footerPanel, 0, 5);
         detailsLayout.SetColumnSpan(footerPanel, 2);
@@ -487,6 +501,16 @@ public sealed class TagAssignmentForm : Form
         AppNavigation.SwitchMode?.Invoke(AppMode.Registration);
     }
 
+    private void CloseButton_Click(object? sender, EventArgs e)
+    {
+        if (HasUnsavedTagChanges() && !ConfirmDiscardChanges())
+        {
+            return;
+        }
+
+        AppNavigation.ShowStartupScreen?.Invoke();
+    }
+
     private async void SearchTextBox_KeyDown(object? sender, KeyEventArgs e)
     {
         if (e.KeyCode != Keys.Enter)
@@ -683,6 +707,7 @@ public sealed class TagAssignmentForm : Form
         _searchResultsListBox.Enabled = !busy;
         UpdateAssignTagButtonState();
         _saveButton.Enabled = !busy && _currentTeam is not null;
+        _closeButton.Enabled = !busy;
         _switchModeButton.Enabled = !busy;
         if (status is not null)
         {

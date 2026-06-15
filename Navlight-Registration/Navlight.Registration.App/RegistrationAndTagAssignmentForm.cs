@@ -24,6 +24,8 @@ public sealed class RegistrationAndTagAssignmentForm : Form
     private readonly ComboBox _courseComboBox;
     private readonly Label _registrationStatusValueLabel;
     private readonly Label _registeredAtLabel;
+    private readonly CheckBox _flightPlanCheckBox;
+    private readonly Label _flightPlanAtLabel;
     private readonly Label _tagStatusValueLabel;
     private readonly Label _tagStatusDetailLabel;
     private readonly TextBox _tagCodesTextBox;
@@ -33,6 +35,7 @@ public sealed class RegistrationAndTagAssignmentForm : Form
     private readonly Bitmap _deleteActionIcon;
     private readonly Bitmap _addActionIcon;
     private readonly Button _assignTagButton;
+    private readonly Button _closeButton;
     private readonly Button _saveButton;
     private readonly Label _statusLabel;
     private readonly System.Windows.Forms.Timer _searchDebounceTimer;
@@ -128,12 +131,13 @@ public sealed class RegistrationAndTagAssignmentForm : Form
         {
             Dock = DockStyle.Fill,
             ColumnCount = 2,
-            RowCount = 10,
+            RowCount = 11,
             Padding = new Padding(16),
             BackColor = Color.White
         };
         detailsLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 140));
         detailsLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        detailsLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         detailsLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         detailsLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         detailsLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
@@ -189,6 +193,18 @@ public sealed class RegistrationAndTagAssignmentForm : Form
             ForeColor = Color.DimGray,
             Margin = new Padding(12, 4, 0, 0)
         };
+        _flightPlanCheckBox = new CheckBox
+        {
+            AutoSize = true,
+            Margin = new Padding(0, 4, 0, 4)
+        };
+        _flightPlanCheckBox.CheckedChanged += (_, _) => MarkDirty();
+        _flightPlanAtLabel = new Label
+        {
+            AutoSize = true,
+            ForeColor = Color.DimGray,
+            Margin = new Padding(12, 8, 0, 0)
+        };
 
         _tagStatusValueLabel = new Label
         {
@@ -214,6 +230,16 @@ public sealed class RegistrationAndTagAssignmentForm : Form
         registrationPanel.Controls.Add(_registrationStatusValueLabel);
         registrationPanel.Controls.Add(_registeredAtLabel);
 
+        var flightPlanPanel = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            AutoSize = true,
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false
+        };
+        flightPlanPanel.Controls.Add(_flightPlanCheckBox);
+        flightPlanPanel.Controls.Add(_flightPlanAtLabel);
+
         var tagStatusPanel = new FlowLayoutPanel
         {
             Dock = DockStyle.Fill,
@@ -234,8 +260,10 @@ public sealed class RegistrationAndTagAssignmentForm : Form
         detailsLayout.Controls.Add(_courseComboBox, 1, 4);
         detailsLayout.Controls.Add(CreateFieldLabel("Registration"), 0, 5);
         detailsLayout.Controls.Add(registrationPanel, 1, 5);
-        detailsLayout.Controls.Add(CreateFieldLabel("Tag Status"), 0, 6);
-        detailsLayout.Controls.Add(tagStatusPanel, 1, 6);
+        detailsLayout.Controls.Add(CreateFieldLabel("Flight Plan"), 0, 6);
+        detailsLayout.Controls.Add(flightPlanPanel, 1, 6);
+        detailsLayout.Controls.Add(CreateFieldLabel("Tag Status"), 0, 7);
+        detailsLayout.Controls.Add(tagStatusPanel, 1, 7);
 
         _competitorsGrid = new DataGridView
         {
@@ -276,7 +304,7 @@ public sealed class RegistrationAndTagAssignmentForm : Form
         gridContainer.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         gridContainer.Controls.Add(_competitorsGrid, 0, 0);
 
-        detailsLayout.Controls.Add(gridContainer, 0, 7);
+        detailsLayout.Controls.Add(gridContainer, 0, 8);
         detailsLayout.SetColumnSpan(gridContainer, 2);
 
         var tagHeaderPanel = new TableLayoutPanel
@@ -317,6 +345,7 @@ public sealed class RegistrationAndTagAssignmentForm : Form
 
         _tagCodesTextBox = new TextBox
         {
+            CharacterCasing = CharacterCasing.Upper,
             Dock = DockStyle.Fill,
             Margin = new Padding(0, 4, 0, 4),
             PlaceholderText = "Enter tag codes, separated by commas"
@@ -324,7 +353,7 @@ public sealed class RegistrationAndTagAssignmentForm : Form
         _tagCodesTextBox.TextChanged += TagCodesTextBox_TextChanged;
         tagHeaderPanel.Controls.Add(_tagCodesTextBox, 2, 0);
 
-        detailsLayout.Controls.Add(tagHeaderPanel, 0, 8);
+        detailsLayout.Controls.Add(tagHeaderPanel, 0, 9);
         detailsLayout.SetColumnSpan(tagHeaderPanel, 2);
 
         _saveButton = new Button
@@ -338,15 +367,28 @@ public sealed class RegistrationAndTagAssignmentForm : Form
         };
         _saveButton.Click += SaveButton_Click;
 
+        _closeButton = new Button
+        {
+            Text = "Close",
+            AutoSize = true,
+            Anchor = AnchorStyles.Right,
+            Height = 36,
+            Margin = new Padding(0, 12, 0, 0)
+        };
+        _closeButton.Click += CloseButton_Click;
+
         var footerPanel = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
-            ColumnCount = 1,
+            ColumnCount = 3,
             RowCount = 1,
             Margin = new Padding(0)
         };
         footerPanel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        footerPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        footerPanel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         footerPanel.Controls.Add(_saveButton, 0, 0);
+        footerPanel.Controls.Add(_closeButton, 2, 0);
 
         var detailsWrapper = new TableLayoutPanel
         {
@@ -565,6 +607,7 @@ public sealed class RegistrationAndTagAssignmentForm : Form
         _currentTeam.CategoryId = selectedCategory.CategoryId;
         _currentTeam.CourseId = selectedCourse.CourseId;
         _currentTeam.Registered = true;
+        _currentTeam.FlightPlan = _flightPlanCheckBox.Checked;
         _currentTeam.Competitors = competitorNames
             .Select(name => new CompetitorRecord { Name = name })
             .ToList();
@@ -703,6 +746,16 @@ public sealed class RegistrationAndTagAssignmentForm : Form
         {
             ToggleBusyState(false);
         }
+    }
+
+    private void CloseButton_Click(object? sender, EventArgs e)
+    {
+        if (_hasUnsavedChanges && !ConfirmDiscardChanges())
+        {
+            return;
+        }
+
+        AppNavigation.ShowStartupScreen?.Invoke();
     }
 
     private void Competitors_ListChanged(object? sender, ListChangedEventArgs e)
@@ -1046,6 +1099,8 @@ public sealed class RegistrationAndTagAssignmentForm : Form
         _courseComboBox.DataSource = null;
         _registrationStatusValueLabel.Text = "Not registered";
         _registeredAtLabel.Text = string.Empty;
+        _flightPlanCheckBox.Checked = false;
+        _flightPlanAtLabel.Text = string.Empty;
         _tagCodesTextBox.Clear();
         UpdateTagStatus(0);
         _competitors.Clear();
@@ -1134,6 +1189,10 @@ public sealed class RegistrationAndTagAssignmentForm : Form
             _registrationStatusValueLabel.Text = _currentTeam.Registered ? "Registered" : "Not registered";
             _registeredAtLabel.Text = _currentTeam.RegisteredAt.HasValue
                 ? $"Registered at {_currentTeam.RegisteredAt.Value:G}"
+                : string.Empty;
+            _flightPlanCheckBox.Checked = _currentTeam.FlightPlan;
+            _flightPlanAtLabel.Text = _currentTeam.FlightPlanAt.HasValue
+                ? $"Returned at {_currentTeam.FlightPlanAt.Value:G}"
                 : string.Empty;
 
             _categoryComboBox.DataSource = null;
@@ -1244,6 +1303,7 @@ public sealed class RegistrationAndTagAssignmentForm : Form
         _teamNameTextBox.Enabled = enabled;
         _categoryComboBox.Enabled = enabled;
         _courseComboBox.Enabled = enabled;
+        _flightPlanCheckBox.Enabled = enabled;
         _competitorsGrid.Enabled = enabled;
         _tagCodesTextBox.Enabled = enabled;
         UpdateAssignTagButtonState();
@@ -1258,6 +1318,7 @@ public sealed class RegistrationAndTagAssignmentForm : Form
         _searchResultsListBox.Enabled = !busy;
         UpdateAssignTagButtonState();
         _saveButton.Enabled = !busy && _currentTeam is not null;
+        _closeButton.Enabled = !busy;
         if (status is not null)
         {
             SetStatus(status);

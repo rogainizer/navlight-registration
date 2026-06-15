@@ -20,6 +20,8 @@ public sealed class AdminTeamEditDialog : Form
     private readonly ComboBox _categoryComboBox;
     private readonly ComboBox _courseComboBox;
     private readonly CheckBox _registeredCheckBox;
+    private readonly CheckBox _flightPlanCheckBox;
+    private readonly DateTimePicker _flightPlanAtPicker;
     private readonly TextBox _tagCodesTextBox;
     private readonly Button _assignTagButton;
     private readonly DataGridView _competitorsGrid;
@@ -77,8 +79,8 @@ public sealed class AdminTeamEditDialog : Form
         detailsLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         detailsLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         detailsLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        detailsLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         detailsLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        detailsLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         detailsLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
 
         var headingLabel = new Label
@@ -115,8 +117,23 @@ public sealed class AdminTeamEditDialog : Form
             Text = "Registered",
             Margin = new Padding(0, 8, 0, 8)
         };
+        _flightPlanCheckBox = new CheckBox
+        {
+            AutoSize = true,
+            Text = "Returned",
+            Margin = new Padding(0, 8, 12, 8)
+        };
+        _flightPlanCheckBox.CheckedChanged += FlightPlanCheckBox_CheckedChanged;
+        _flightPlanAtPicker = new DateTimePicker
+        {
+            Format = DateTimePickerFormat.Custom,
+            CustomFormat = "dd/MM/yyyy HH:mm",
+            Width = 180,
+            Margin = new Padding(0, 4, 0, 4)
+        };
         _tagCodesTextBox = new TextBox
         {
+            CharacterCasing = CharacterCasing.Upper,
             Dock = DockStyle.Fill,
             Margin = new Padding(0, 4, 0, 4),
             PlaceholderText = "Enter tag codes, separated by commas"
@@ -132,6 +149,20 @@ public sealed class AdminTeamEditDialog : Form
         detailsLayout.Controls.Add(_courseComboBox, 1, 4);
         detailsLayout.Controls.Add(CreateFieldLabel("Status"), 0, 5);
         detailsLayout.Controls.Add(_registeredCheckBox, 1, 5);
+
+        var flightPlanPanel = new FlowLayoutPanel
+        {
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false,
+            Margin = new Padding(0)
+        };
+        flightPlanPanel.Controls.Add(_flightPlanCheckBox);
+        flightPlanPanel.Controls.Add(_flightPlanAtPicker);
+
+        detailsLayout.Controls.Add(CreateFieldLabel("Flight Plan"), 0, 6);
+        detailsLayout.Controls.Add(flightPlanPanel, 1, 6);
 
         _competitorsGrid = new DataGridView
         {
@@ -162,7 +193,7 @@ public sealed class AdminTeamEditDialog : Form
         _competitorsGrid.CellPainting += CompetitorsGrid_CellPainting;
         _competitorsGrid.ColumnHeaderMouseClick += CompetitorsGrid_ColumnHeaderMouseClick;
 
-        detailsLayout.Controls.Add(_competitorsGrid, 0, 6);
+        detailsLayout.Controls.Add(_competitorsGrid, 0, 7);
         detailsLayout.SetColumnSpan(_competitorsGrid, 2);
 
         var tagHeaderPanel = new TableLayoutPanel
@@ -202,7 +233,7 @@ public sealed class AdminTeamEditDialog : Form
         tagHeaderPanel.Controls.Add(_assignTagButton, 1, 0);
         tagHeaderPanel.Controls.Add(_tagCodesTextBox, 2, 0);
 
-        detailsLayout.Controls.Add(tagHeaderPanel, 0, 7);
+        detailsLayout.Controls.Add(tagHeaderPanel, 0, 8);
         detailsLayout.SetColumnSpan(tagHeaderPanel, 2);
 
         _saveButton = new Button
@@ -391,6 +422,9 @@ public sealed class AdminTeamEditDialog : Form
             _courseComboBox.DataSource = courses;
             _courseComboBox.SelectedItem = courses.FirstOrDefault(item => item.CourseId == _team.CourseId);
             _registeredCheckBox.Checked = _team.Registered;
+            _flightPlanCheckBox.Checked = _team.FlightPlan;
+            _flightPlanAtPicker.Value = _team.FlightPlanAt ?? DateTime.Now;
+            UpdateFlightPlanControls();
             _tagCodesTextBox.Text = string.Join(", ", _team.TagCodes);
 
             if (_teamId.HasValue)
@@ -465,6 +499,8 @@ public sealed class AdminTeamEditDialog : Form
         _team.CategoryId = selectedCategory.CategoryId;
         _team.CourseId = selectedCourse.CourseId;
         _team.Registered = _registeredCheckBox.Checked;
+        _team.FlightPlan = _flightPlanCheckBox.Checked;
+        _team.FlightPlanAt = _flightPlanCheckBox.Checked ? _flightPlanAtPicker.Value : null;
         _team.Competitors = competitorNames.Select(name => new CompetitorRecord { Name = name }).ToList();
         _team.TagCodes = _tagCodesTextBox.Text
             .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
@@ -751,6 +787,27 @@ public sealed class AdminTeamEditDialog : Form
         }
     }
 
+    private void FlightPlanCheckBox_CheckedChanged(object? sender, EventArgs e)
+    {
+        UpdateFlightPlanControls(setDefaultTimestamp: true);
+    }
+
+    private void UpdateFlightPlanControls(bool setDefaultTimestamp = false)
+    {
+        var isReturned = _flightPlanCheckBox.Checked;
+        _flightPlanAtPicker.Enabled = isReturned;
+
+        if (!isReturned)
+        {
+            return;
+        }
+
+        if (setDefaultTimestamp && _team?.FlightPlanAt is null)
+        {
+            _flightPlanAtPicker.Value = DateTime.Now;
+        }
+    }
+
     private void ToggleBusyState(bool busy, string? status = null)
     {
         UseWaitCursor = busy;
@@ -759,6 +816,8 @@ public sealed class AdminTeamEditDialog : Form
         _categoryComboBox.Enabled = !busy;
         _courseComboBox.Enabled = !busy;
         _registeredCheckBox.Enabled = !busy;
+        _flightPlanCheckBox.Enabled = !busy;
+        _flightPlanAtPicker.Enabled = !busy && _flightPlanCheckBox.Checked;
         _tagCodesTextBox.Enabled = !busy;
         _assignTagButton.Enabled = !busy && _tagReaderOptions.IsConfigured;
         _competitorsGrid.Enabled = !busy;

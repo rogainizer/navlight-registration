@@ -6,6 +6,7 @@ obj/
 
 Navlight.Registration.App/bin/
 Navlight.Registration.App/obj/
+build-validate/
 
 Navlight.Registration.App/appsettings.json
 Navlight.Registration.App/EntryLists/*.txt

@@ -9,5 +9,6 @@ public sealed class AdminTeamOverviewRow
     public string CourseName { get; init; } = string.Empty;
     public string Competitors { get; init; } = string.Empty;
     public string Tags { get; init; } = string.Empty;
+    public bool FlightPlan { get; init; }
     public string Status { get; init; } = string.Empty;
 }

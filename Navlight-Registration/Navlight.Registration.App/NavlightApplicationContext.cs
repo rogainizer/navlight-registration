@@ -5,7 +5,19 @@ internal sealed class NavlightApplicationContext : ApplicationContext
     public NavlightApplicationContext(AppMode initialMode)
     {
         AppNavigation.SwitchMode = SwitchMode;
+        AppNavigation.ShowStartupScreen = ShowStartupScreen;
         SwitchMode(initialMode);
+    }
+
+    private void ShowStartupScreen()
+    {
+        using var modeSelectionForm = new ModeSelectionForm();
+        if (modeSelectionForm.ShowDialog(MainForm) != DialogResult.OK)
+        {
+            return;
+        }
+
+        SwitchMode(modeSelectionForm.SelectedMode);
     }
 
     private void SwitchMode(AppMode mode)

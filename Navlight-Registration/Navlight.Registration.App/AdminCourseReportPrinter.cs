@@ -9,8 +9,8 @@ internal sealed class AdminCourseReportPrinter
     private readonly Font _titleFont = new(Control.DefaultFont.FontFamily, 14, FontStyle.Bold);
     private readonly Font _headerFont = new(Control.DefaultFont.FontFamily, 9, FontStyle.Bold);
     private readonly Font _bodyFont = new(Control.DefaultFont.FontFamily, 9);
-    private readonly float[] _columnFractions = [0.18f, 0.12f, 0.22f, 0.33f, 0.15f];
-    private readonly string[] _columnHeaders = ["Category", "Team #", "Team", "Competitors", "Tags"];
+    private readonly float[] _columnFractions = [0.16f, 0.11f, 0.2f, 0.28f, 0.11f, 0.14f];
+    private readonly string[] _columnHeaders = ["Category", "Team #", "Team", "Competitors", "Flight Plan", "Tags"];
 
     private int _sectionIndex;
     private int _rowIndex;
@@ -87,6 +87,7 @@ internal sealed class AdminCourseReportPrinter
                 row.TeamNumber,
                 row.TeamName,
                 row.Competitors,
+                row.FlightPlan ? "Returned" : "Not returned",
                 row.Tags
             };
 

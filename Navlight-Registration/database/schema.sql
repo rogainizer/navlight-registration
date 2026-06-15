@@ -36,6 +36,8 @@ CREATE TABLE IF NOT EXISTS Team (
 	CourseId INT NOT NULL,
 	Registered BIT NOT NULL DEFAULT 0,
 	RegisteredAt DATETIME NULL,
+	FlightPlan BIT NOT NULL DEFAULT 0,
+	FlightPlanAt DATETIME NULL,
 	LastUpdatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 	CONSTRAINT FK_Team_Event
 		FOREIGN KEY (EventId) REFERENCES Event(EventId),
@@ -45,6 +47,38 @@ CREATE TABLE IF NOT EXISTS Team (
 		FOREIGN KEY (CourseId) REFERENCES Course(CourseId),
 	CONSTRAINT UQ_Team_Event_Number UNIQUE (EventId, TeamNumber)
 );
+
+SET @flightPlanColumnExists = (
+	SELECT COUNT(*)
+	FROM information_schema.COLUMNS
+	WHERE TABLE_SCHEMA = DATABASE()
+	  AND TABLE_NAME = 'Team'
+	  AND COLUMN_NAME = 'FlightPlan'
+);
+SET @flightPlanAlterSql = IF(
+	@flightPlanColumnExists = 0,
+	'ALTER TABLE Team ADD COLUMN FlightPlan BIT NOT NULL DEFAULT 0 AFTER RegisteredAt',
+	'SELECT 1'
+);
+PREPARE flightPlanAlterStatement FROM @flightPlanAlterSql;
+EXECUTE flightPlanAlterStatement;
+DEALLOCATE PREPARE flightPlanAlterStatement;
+
+SET @flightPlanAtColumnExists = (
+	SELECT COUNT(*)
+	FROM information_schema.COLUMNS
+	WHERE TABLE_SCHEMA = DATABASE()
+	  AND TABLE_NAME = 'Team'
+	  AND COLUMN_NAME = 'FlightPlanAt'
+);
+SET @flightPlanAtAlterSql = IF(
+	@flightPlanAtColumnExists = 0,
+	'ALTER TABLE Team ADD COLUMN FlightPlanAt DATETIME NULL AFTER FlightPlan',
+	'SELECT 1'
+);
+PREPARE flightPlanAtAlterStatement FROM @flightPlanAtAlterSql;
+EXECUTE flightPlanAtAlterStatement;
+DEALLOCATE PREPARE flightPlanAtAlterStatement;
 
 CREATE TABLE IF NOT EXISTS Competitor (
 	CompetitorId INT NOT NULL AUTO_INCREMENT PRIMARY KEY,

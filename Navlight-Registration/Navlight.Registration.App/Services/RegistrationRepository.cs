@@ -14,10 +14,14 @@ public sealed class RegistrationRepository
 
     public async Task<IReadOnlyList<TeamSearchResult>> SearchTeamsAsync(string searchTerm, bool registeredOnly = false)
     {
+                var trimmedSearchTerm = searchTerm.Trim();
+                var searchByTeamNumber = trimmedSearchTerm.All(char.IsDigit);
+
         const string sql = """
             SELECT TeamId, TeamNumber, Name, Registered
             FROM Team
-            WHERE Name LIKE @searchTerm
+                        WHERE ((@searchByTeamNumber = 1 AND TeamNumber = @teamNumber)
+                                     OR (@searchByTeamNumber = 0 AND Name LIKE @searchTerm))
               AND (@registeredOnly = 0 OR Registered = 1)
             ORDER BY Name
             LIMIT 50;
@@ -27,8 +31,10 @@ public sealed class RegistrationRepository
         await connection.OpenAsync();
 
         await using var command = new MySqlCommand(sql, connection);
-        command.Parameters.AddWithValue("@searchTerm", $"%{searchTerm}%");
-    command.Parameters.AddWithValue("@registeredOnly", registeredOnly);
+        command.Parameters.AddWithValue("@searchByTeamNumber", searchByTeamNumber);
+        command.Parameters.AddWithValue("@teamNumber", trimmedSearchTerm);
+        command.Parameters.AddWithValue("@searchTerm", $"%{trimmedSearchTerm}%");
+        command.Parameters.AddWithValue("@registeredOnly", registeredOnly);
 
         var results = new List<TeamSearchResult>();
         await using var reader = await command.ExecuteReaderAsync();
@@ -49,7 +55,7 @@ public sealed class RegistrationRepository
     public async Task<TeamRegistration> GetTeamRegistrationAsync(int teamId)
     {
         const string teamSql = """
-            SELECT TeamId, EventId, TeamNumber, Name, CategoryId, CourseId, Registered, RegisteredAt, LastUpdatedAt
+            SELECT TeamId, EventId, TeamNumber, Name, CategoryId, CourseId, Registered, RegisteredAt, FlightPlan, FlightPlanAt, LastUpdatedAt
             FROM Team
             WHERE TeamId = @teamId;
             """;
@@ -73,6 +79,7 @@ public sealed class RegistrationRepository
             if (await reader.ReadAsync())
             {
                 var registeredAtOrdinal = reader.GetOrdinal("RegisteredAt");
+                var flightPlanAtOrdinal = reader.GetOrdinal("FlightPlanAt");
                 registration = new TeamRegistration
                 {
                     TeamId = reader.GetInt32("TeamId"),
@@ -83,6 +90,8 @@ public sealed class RegistrationRepository
                     CourseId = reader.GetInt32("CourseId"),
                     Registered = reader.GetBoolean("Registered"),
                     RegisteredAt = reader.IsDBNull(registeredAtOrdinal) ? null : reader.GetDateTime("RegisteredAt"),
+                    FlightPlan = reader.GetBoolean("FlightPlan"),
+                    FlightPlanAt = reader.IsDBNull(flightPlanAtOrdinal) ? null : reader.GetDateTime("FlightPlanAt"),
                     LastUpdatedAt = reader.GetDateTime("LastUpdatedAt")
                 };
             }
@@ -203,10 +212,16 @@ public sealed class RegistrationRepository
                 CategoryId = @categoryId,
                 CourseId = @courseId,
                 Registered = 1,
+                FlightPlan = @flightPlan,
                 LastUpdatedAt = UTC_TIMESTAMP(),
                 RegisteredAt = CASE
                     WHEN RegisteredAt IS NULL THEN UTC_TIMESTAMP()
                     ELSE RegisteredAt
+                END,
+                FlightPlanAt = CASE
+                    WHEN @flightPlan = 0 THEN NULL
+                    WHEN FlightPlanAt IS NULL THEN UTC_TIMESTAMP()
+                    ELSE FlightPlanAt
                 END
             WHERE TeamId = @teamId
               AND LastUpdatedAt = @lastUpdatedAt;
@@ -227,6 +242,7 @@ public sealed class RegistrationRepository
                 updateTeamCommand.Parameters.AddWithValue("@name", registration.Name);
                 updateTeamCommand.Parameters.AddWithValue("@categoryId", registration.CategoryId);
                 updateTeamCommand.Parameters.AddWithValue("@courseId", registration.CourseId);
+                updateTeamCommand.Parameters.AddWithValue("@flightPlan", registration.FlightPlan);
                 updateTeamCommand.Parameters.AddWithValue("@lastUpdatedAt", registration.LastUpdatedAt);
                 ThrowIfConcurrencyConflict(await updateTeamCommand.ExecuteNonQueryAsync());
             }
@@ -262,10 +278,16 @@ public sealed class RegistrationRepository
                 CategoryId = @categoryId,
                 CourseId = @courseId,
                 Registered = 1,
+                FlightPlan = @flightPlan,
                 LastUpdatedAt = UTC_TIMESTAMP(),
                 RegisteredAt = CASE
                     WHEN RegisteredAt IS NULL THEN UTC_TIMESTAMP()
                     ELSE RegisteredAt
+                END,
+                FlightPlanAt = CASE
+                    WHEN @flightPlan = 0 THEN NULL
+                    WHEN FlightPlanAt IS NULL THEN UTC_TIMESTAMP()
+                    ELSE FlightPlanAt
                 END
             WHERE TeamId = @teamId
               AND LastUpdatedAt = @lastUpdatedAt;
@@ -288,6 +310,7 @@ public sealed class RegistrationRepository
                 updateTeamCommand.Parameters.AddWithValue("@name", registration.Name);
                 updateTeamCommand.Parameters.AddWithValue("@categoryId", registration.CategoryId);
                 updateTeamCommand.Parameters.AddWithValue("@courseId", registration.CourseId);
+                updateTeamCommand.Parameters.AddWithValue("@flightPlan", registration.FlightPlan);
                 updateTeamCommand.Parameters.AddWithValue("@lastUpdatedAt", registration.LastUpdatedAt);
                 ThrowIfConcurrencyConflict(await updateTeamCommand.ExecuteNonQueryAsync());
             }
@@ -332,7 +355,7 @@ public sealed class RegistrationRepository
     public async Task SaveAdminTeamAsync(TeamRegistration registration)
     {
         const string insertTeamSql = """
-            INSERT INTO Team (EventId, TeamNumber, Name, CategoryId, CourseId, Registered, RegisteredAt)
+            INSERT INTO Team (EventId, TeamNumber, Name, CategoryId, CourseId, Registered, RegisteredAt, FlightPlan, FlightPlanAt)
             VALUES (
                 @eventId,
                 @teamNumber,
@@ -340,7 +363,9 @@ public sealed class RegistrationRepository
                 @categoryId,
                 @courseId,
                 @registered,
-                CASE WHEN @registered = 1 THEN UTC_TIMESTAMP() ELSE NULL END
+                CASE WHEN @registered = 1 THEN UTC_TIMESTAMP() ELSE NULL END,
+                @flightPlan,
+                @flightPlanAt
             );
             SELECT LAST_INSERT_ID();
             """;
@@ -352,12 +377,14 @@ public sealed class RegistrationRepository
                 CategoryId = @categoryId,
                 CourseId = @courseId,
                 Registered = @registered,
+                FlightPlan = @flightPlan,
                 LastUpdatedAt = UTC_TIMESTAMP(),
                 RegisteredAt = CASE
                     WHEN @registered = 0 THEN NULL
                     WHEN RegisteredAt IS NULL THEN UTC_TIMESTAMP()
                     ELSE RegisteredAt
-                END
+                END,
+                FlightPlanAt = @flightPlanAt
             WHERE TeamId = @teamId
               AND LastUpdatedAt = @lastUpdatedAt;
             """;
@@ -383,6 +410,8 @@ public sealed class RegistrationRepository
                 insertTeamCommand.Parameters.AddWithValue("@categoryId", registration.CategoryId);
                 insertTeamCommand.Parameters.AddWithValue("@courseId", registration.CourseId);
                 insertTeamCommand.Parameters.AddWithValue("@registered", registration.Registered);
+                insertTeamCommand.Parameters.AddWithValue("@flightPlan", registration.FlightPlan);
+                insertTeamCommand.Parameters.AddWithValue("@flightPlanAt", registration.FlightPlanAt);
                 teamId = Convert.ToInt32(await insertTeamCommand.ExecuteScalarAsync());
             }
             else
@@ -394,6 +423,8 @@ public sealed class RegistrationRepository
                 updateTeamCommand.Parameters.AddWithValue("@categoryId", registration.CategoryId);
                 updateTeamCommand.Parameters.AddWithValue("@courseId", registration.CourseId);
                 updateTeamCommand.Parameters.AddWithValue("@registered", registration.Registered);
+                updateTeamCommand.Parameters.AddWithValue("@flightPlan", registration.FlightPlan);
+                updateTeamCommand.Parameters.AddWithValue("@flightPlanAt", registration.FlightPlanAt);
                 updateTeamCommand.Parameters.AddWithValue("@lastUpdatedAt", registration.LastUpdatedAt);
                 ThrowIfConcurrencyConflict(await updateTeamCommand.ExecuteNonQueryAsync());
             }
@@ -806,9 +837,10 @@ public sealed class RegistrationRepository
                    Team.TeamNumber,
                    Team.Name,
                    Category.Name AS CategoryName,
-                     Course.Name AS CourseName,
+                                     Course.Name AS CourseName,
                    COALESCE(GROUP_CONCAT(DISTINCT Competitor.Name ORDER BY Competitor.Name SEPARATOR ', '), '') AS Competitors,
                    COALESCE(GROUP_CONCAT(DISTINCT TagAssignment.TagCode ORDER BY TagAssignment.TagCode SEPARATOR ', '), '') AS Tags,
+                                     Team.FlightPlan,
                    CASE
                        WHEN Team.Registered = 0 THEN 'Not registered'
                        ELSE 'Registered'
@@ -818,7 +850,7 @@ public sealed class RegistrationRepository
                  INNER JOIN Course ON Course.CourseId = Team.CourseId
             LEFT JOIN Competitor ON Competitor.TeamId = Team.TeamId
             LEFT JOIN TagAssignment ON TagAssignment.TeamId = Team.TeamId
-                 GROUP BY Team.TeamId, Team.TeamNumber, Team.Name, Category.Name, Course.Name, Team.Registered
+              GROUP BY Team.TeamId, Team.TeamNumber, Team.Name, Category.Name, Course.Name, Team.FlightPlan, Team.Registered
             ORDER BY Team.TeamNumber, Team.Name;
             """;
 
@@ -839,6 +871,7 @@ public sealed class RegistrationRepository
                 CourseName = reader.GetString("CourseName"),
                 Competitors = reader.GetString("Competitors"),
                 Tags = reader.GetString("Tags"),
+                FlightPlan = reader.GetBoolean("FlightPlan"),
                 Status = reader.GetString("Status")
             });
         }

@@ -20,11 +20,14 @@ public sealed class MainForm : Form
     private readonly ComboBox _courseComboBox;
     private readonly Label _registrationStatusValueLabel;
     private readonly Label _registeredAtLabel;
+    private readonly CheckBox _flightPlanCheckBox;
+    private readonly Label _flightPlanAtLabel;
     private readonly DataGridView _competitorsGrid;
     private readonly Bitmap _copyActionIcon;
     private readonly Bitmap _pasteActionIcon;
     private readonly Bitmap _deleteActionIcon;
     private readonly Bitmap _addActionIcon;
+    private readonly Button _closeButton;
     private readonly Button _saveButton;
     private readonly Button _switchModeButton;
     private readonly Label _statusLabel;
@@ -118,12 +121,13 @@ public sealed class MainForm : Form
         {
             Dock = DockStyle.Fill,
             ColumnCount = 2,
-            RowCount = 7,
+            RowCount = 8,
             Padding = new Padding(16),
             BackColor = Color.White
         };
         detailsLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 140));
         detailsLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        detailsLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         detailsLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         detailsLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         detailsLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
@@ -176,6 +180,18 @@ public sealed class MainForm : Form
             ForeColor = Color.DimGray,
             Margin = new Padding(12, 4, 0, 0)
         };
+        _flightPlanCheckBox = new CheckBox
+        {
+            AutoSize = true,
+            Margin = new Padding(0, 4, 0, 4)
+        };
+        _flightPlanCheckBox.CheckedChanged += (_, _) => MarkDirty();
+        _flightPlanAtLabel = new Label
+        {
+            AutoSize = true,
+            ForeColor = Color.DimGray,
+            Margin = new Padding(12, 8, 0, 0)
+        };
 
         var registrationPanel = new FlowLayoutPanel
         {
@@ -187,6 +203,16 @@ public sealed class MainForm : Form
         registrationPanel.Controls.Add(_registrationStatusValueLabel);
         registrationPanel.Controls.Add(_registeredAtLabel);
 
+        var flightPlanPanel = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            AutoSize = true,
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false
+        };
+        flightPlanPanel.Controls.Add(_flightPlanCheckBox);
+        flightPlanPanel.Controls.Add(_flightPlanAtLabel);
+
         detailsLayout.Controls.Add(CreateFieldLabel("Team Number"), 0, 1);
         detailsLayout.Controls.Add(_teamNumberTextBox, 1, 1);
         detailsLayout.Controls.Add(CreateFieldLabel("Team Name"), 0, 2);
@@ -197,6 +223,8 @@ public sealed class MainForm : Form
         detailsLayout.Controls.Add(_courseComboBox, 1, 4);
         detailsLayout.Controls.Add(CreateFieldLabel("Status"), 0, 5);
         detailsLayout.Controls.Add(registrationPanel, 1, 5);
+        detailsLayout.Controls.Add(CreateFieldLabel("Flight Plan"), 0, 6);
+        detailsLayout.Controls.Add(flightPlanPanel, 1, 6);
 
         _competitorsGrid = new DataGridView
         {
@@ -237,7 +265,7 @@ public sealed class MainForm : Form
         gridContainer.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         gridContainer.Controls.Add(_competitorsGrid, 0, 0);
 
-        detailsLayout.Controls.Add(gridContainer, 0, 6);
+        detailsLayout.Controls.Add(gridContainer, 0, 7);
         detailsLayout.SetColumnSpan(gridContainer, 2);
 
         _saveButton = new Button
@@ -261,18 +289,30 @@ public sealed class MainForm : Form
         };
         _switchModeButton.Click += SwitchModeButton_Click;
 
+        _closeButton = new Button
+        {
+            Text = "Close",
+            AutoSize = true,
+            Anchor = AnchorStyles.Right,
+            Height = 36,
+            Margin = new Padding(0, 12, 8, 0)
+        };
+        _closeButton.Click += CloseButton_Click;
+
         var footerPanel = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
-            ColumnCount = 3,
+            ColumnCount = 4,
             RowCount = 1,
             Margin = new Padding(0)
         };
         footerPanel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         footerPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         footerPanel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        footerPanel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         footerPanel.Controls.Add(_saveButton, 0, 0);
-        footerPanel.Controls.Add(_switchModeButton, 2, 0);
+        footerPanel.Controls.Add(_closeButton, 2, 0);
+        footerPanel.Controls.Add(_switchModeButton, 3, 0);
 
         var detailsWrapper = new TableLayoutPanel
         {
@@ -439,6 +479,7 @@ public sealed class MainForm : Form
         _currentTeam.CategoryId = selectedCategory.CategoryId;
         _currentTeam.CourseId = selectedCourse.CourseId;
         _currentTeam.Registered = true;
+        _currentTeam.FlightPlan = _flightPlanCheckBox.Checked;
         _currentTeam.Competitors = competitorNames
             .Select(name => new CompetitorRecord { Name = name })
             .ToList();
@@ -471,6 +512,16 @@ public sealed class MainForm : Form
 
         AppNavigation.PendingTagAssignmentTeamId = AppNavigation.LastSavedRegistrationTeamId;
         AppNavigation.SwitchMode?.Invoke(AppMode.TagAssignment);
+    }
+
+    private void CloseButton_Click(object? sender, EventArgs e)
+    {
+        if (_hasUnsavedChanges && !ConfirmDiscardChanges())
+        {
+            return;
+        }
+
+        AppNavigation.ShowStartupScreen?.Invoke();
     }
 
     private void Competitors_ListChanged(object? sender, ListChangedEventArgs e)
@@ -736,7 +787,7 @@ public sealed class MainForm : Form
         _lastSearchText = _searchTextBox.Text;
 
         var searchTerm = _searchTextBox.Text.Trim();
-        if (searchTerm.Length < MinimumSearchLength)
+        if (!IsImmediateTeamNumberSearch(searchTerm) && searchTerm.Length < MinimumSearchLength)
         {
             _searchDebounceTimer.Stop();
             ClearSearchResults();
@@ -751,6 +802,7 @@ public sealed class MainForm : Form
     private async Task SearchTeamsAsync(bool forceSearch = false)
     {
         var searchTerm = _searchTextBox.Text.Trim();
+        var isImmediateTeamNumberSearch = IsImmediateTeamNumberSearch(searchTerm);
         if (string.IsNullOrWhiteSpace(searchTerm))
         {
             ClearSearchResults();
@@ -758,7 +810,7 @@ public sealed class MainForm : Form
             return;
         }
 
-        if (!forceSearch && searchTerm.Length < MinimumSearchLength)
+        if (!forceSearch && !isImmediateTeamNumberSearch && searchTerm.Length < MinimumSearchLength)
         {
             ClearSearchResults();
             SetStatus($"Type at least {MinimumSearchLength} characters to search.");
@@ -798,6 +850,11 @@ public sealed class MainForm : Form
         }
     }
 
+    private static bool IsImmediateTeamNumberSearch(string searchTerm)
+    {
+        return !string.IsNullOrWhiteSpace(searchTerm) && searchTerm.All(char.IsDigit);
+    }
+
     private void ClearSearchResults()
     {
         _suppressDirtyTracking = true;
@@ -812,6 +869,8 @@ public sealed class MainForm : Form
         _courseComboBox.DataSource = null;
         _registrationStatusValueLabel.Text = "Not registered";
         _registeredAtLabel.Text = string.Empty;
+        _flightPlanCheckBox.Checked = false;
+        _flightPlanAtLabel.Text = string.Empty;
         _competitors.Clear();
         SetEditState(false);
         _hasUnsavedChanges = false;
@@ -910,6 +969,10 @@ public sealed class MainForm : Form
             _registeredAtLabel.Text = _currentTeam.RegisteredAt.HasValue
                 ? $"Registered at {_currentTeam.RegisteredAt.Value:G}"
                 : string.Empty;
+            _flightPlanCheckBox.Checked = _currentTeam.FlightPlan;
+            _flightPlanAtLabel.Text = _currentTeam.FlightPlanAt.HasValue
+                ? $"Returned at {_currentTeam.FlightPlanAt.Value:G}"
+                : string.Empty;
 
             _categoryComboBox.DataSource = null;
             _categoryComboBox.DataSource = categories;
@@ -991,6 +1054,7 @@ public sealed class MainForm : Form
         _teamNameTextBox.Enabled = enabled;
         _categoryComboBox.Enabled = enabled;
         _courseComboBox.Enabled = enabled;
+        _flightPlanCheckBox.Enabled = enabled;
         _competitorsGrid.Enabled = enabled;
         _saveButton.Enabled = enabled;
     }
@@ -1001,6 +1065,7 @@ public sealed class MainForm : Form
         _searchTextBox.Enabled = !busy;
         _searchResultsListBox.Enabled = !busy;
         _saveButton.Enabled = !busy && _currentTeam is not null;
+        _closeButton.Enabled = !busy;
         _switchModeButton.Enabled = !busy;
         if (status is not null)
         {
