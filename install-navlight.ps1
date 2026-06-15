@@ -213,6 +213,45 @@ function Expand-MySqlArchive {
     }
 }
 
+function Get-MySqlDownloadCandidates {
+    param([string]$Uri)
+
+    $candidates = New-Object System.Collections.Generic.List[string]
+    if (-not [string]::IsNullOrWhiteSpace($Uri) -and $Uri -match '^https://dev\.mysql\.com/get/Downloads/MySQL-([0-9]+\.[0-9]+)/(.+)$') {
+        $majorMinorVersion = $Matches[1]
+        $archiveName = $Matches[2]
+        $candidates.Add("https://cdn.mysql.com//archives/mysql-$majorMinorVersion/$archiveName")
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($Uri)) {
+        $candidates.Add($Uri)
+    }
+
+    return $candidates
+}
+
+function Download-File {
+    param(
+        [string[]]$Uris,
+        [string]$DestinationPath
+    )
+
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
+    $failures = @()
+    foreach ($uri in $Uris) {
+        try {
+            Invoke-WebRequest -Uri $uri -OutFile $DestinationPath -ErrorAction Stop
+            return $uri
+        }
+        catch {
+            $failures += "${uri}: $($_.Exception.Message)"
+        }
+    }
+
+    throw "Failed to download file. Attempts:`n$($failures -join "`n")"
+}
+
 if ([string]::IsNullOrWhiteSpace($InstallMode)) {
     Write-Host "Choose installation mode:"
     Write-Host "1. Client only"
@@ -338,8 +377,10 @@ if ($InstallMode -in @("HostAndClient", "SingleUser")) {
         if ([string]::IsNullOrWhiteSpace($resolvedMySqlZipPath)) {
             if (Read-YesNo -Prompt "Download MySQL automatically during install" -DefaultValue $true) {
                 $resolvedMySqlZipPath = Join-Path $env:TEMP "navlight-mysql.zip"
-                Write-Host "Downloading MySQL archive from $MySqlDownloadUrl ..."
-                Invoke-WebRequest -Uri $MySqlDownloadUrl -OutFile $resolvedMySqlZipPath
+                $downloadCandidates = Get-MySqlDownloadCandidates -Uri $MySqlDownloadUrl
+                Write-Host "Downloading MySQL archive..."
+                $downloadUri = Download-File -Uris $downloadCandidates -DestinationPath $resolvedMySqlZipPath
+                Write-Host "Downloaded MySQL archive from $downloadUri"
             }
             else {
                 $resolvedMySqlZipPath = Read-RequiredValue -Prompt "Path to MySQL ZIP archive" -DefaultValue ""
