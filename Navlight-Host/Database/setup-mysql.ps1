@@ -61,6 +61,24 @@ function Get-PlainText {
     return $credential.GetNetworkCredential().Password
 }
 
+function Get-LogTail {
+    param(
+        [string]$Path,
+        [int]$LineCount = 40
+    )
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        return $null
+    }
+
+    $content = Get-Content -LiteralPath $Path -Tail $LineCount -ErrorAction SilentlyContinue
+    if (-not $content) {
+        return $null
+    }
+
+    return ($content -join [Environment]::NewLine)
+}
+
 Assert-FileExists -Path $mysqldPath -Description "mysqld.exe"
 Assert-FileExists -Path $mysqlPath -Description "mysql.exe"
 Assert-FileExists -Path $mysqlAdminPath -Description "mysqladmin.exe"
@@ -88,16 +106,54 @@ else {
 }
 
 Write-Host "Starting MySQL temporarily on port $Port..."
+$serverStdOutPath = Join-Path $dataRoot "mysqld-bootstrap.stdout.log"
+$serverStdErrPath = Join-Path $dataRoot "mysqld-bootstrap.stderr.log"
+$null = New-Item -ItemType File -Path $serverStdOutPath -Force
+$null = New-Item -ItemType File -Path $serverStdErrPath -Force
+
 $serverProcess = Start-Process -FilePath $mysqldPath -ArgumentList @(
     "--basedir=$mysqlRoot",
     "--datadir=$dataRoot",
     "--port=$Port"
-) -PassThru
+) -RedirectStandardOutput $serverStdOutPath -RedirectStandardError $serverStdErrPath -PassThru
+
+Write-Host "MySQL bootstrap logs:"
+Write-Host "  STDOUT: $serverStdOutPath"
+Write-Host "  STDERR: $serverStdErrPath"
 
 $plainRootPassword = Get-PlainText -Value $RootPassword
 
 try {
-    Wait-ForPort -PortNumber $Port
+    try {
+        Wait-ForPort -PortNumber $Port
+    }
+    catch {
+        $serverExitCode = if ($serverProcess.HasExited) { $serverProcess.ExitCode } else { $null }
+        $stderrTail = Get-LogTail -Path $serverStdErrPath
+        $stdoutTail = Get-LogTail -Path $serverStdOutPath
+
+        $details = @(
+            $_.Exception.Message,
+            "Bootstrap STDOUT log: $serverStdOutPath",
+            "Bootstrap STDERR log: $serverStdErrPath"
+        )
+
+        if ($serverExitCode -ne $null) {
+            $details += "mysqld exited early with code $serverExitCode."
+        }
+
+        if (-not [string]::IsNullOrWhiteSpace($stderrTail)) {
+            $details += "Last STDERR lines:"
+            $details += $stderrTail
+        }
+
+        if (-not [string]::IsNullOrWhiteSpace($stdoutTail)) {
+            $details += "Last STDOUT lines:"
+            $details += $stdoutTail
+        }
+
+        throw ($details -join [Environment]::NewLine)
+    }
 
     $escapedRootPassword = $plainRootPassword.Replace("'", "''")
     $bootstrapSql = Join-Path $env:TEMP ("navlight-bootstrap-" + [Guid]::NewGuid().ToString("N") + ".sql")
