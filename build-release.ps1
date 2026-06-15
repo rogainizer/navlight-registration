@@ -15,6 +15,13 @@ $publishDir = Join-Path $OutputRoot "publish"
 $bundleRoot = Join-Path $OutputRoot "Navlight-Registration-Release"
 $payloadRoot = Join-Path $bundleRoot "payload"
 $zipPath = Join-Path $OutputRoot "navlight-registration-$RuntimeIdentifier.zip"
+$releaseVersion = & git -C $repoRoot describe --tags --exact-match 2>$null
+if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($releaseVersion)) {
+    $releaseVersion = (& git -C $repoRoot rev-parse --short HEAD 2>$null)
+}
+if ([string]::IsNullOrWhiteSpace($releaseVersion)) {
+    $releaseVersion = "unknown"
+}
 
 if (Test-Path -LiteralPath $publishDir) {
     Remove-Item -LiteralPath $publishDir -Recurse -Force
@@ -59,6 +66,7 @@ Copy-Item -LiteralPath (Join-Path $repoRoot "install-navlight.ps1") -Destination
 $readmePath = Join-Path $bundleRoot "README.txt"
 @"
 Navlight release bundle
+Version: $releaseVersion
 
 Files:
 - install-navlight.ps1 : installs ClientOnly, HostAndClient, or SingleUser roles
