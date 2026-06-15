@@ -15,8 +15,8 @@ $publishDir = Join-Path $OutputRoot "publish"
 $bundleRoot = Join-Path $OutputRoot "Navlight-Registration-Release"
 $payloadRoot = Join-Path $bundleRoot "payload"
 $zipPath = Join-Path $OutputRoot "navlight-registration-$RuntimeIdentifier.zip"
-$releaseVersion = & git -C $repoRoot describe --tags --exact-match 2>$null
-if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($releaseVersion)) {
+$releaseVersion = (& git -C $repoRoot tag --points-at HEAD | Select-Object -First 1)
+if ([string]::IsNullOrWhiteSpace($releaseVersion)) {
     $releaseVersion = (& git -C $repoRoot rev-parse --short HEAD 2>$null)
 }
 if ([string]::IsNullOrWhiteSpace($releaseVersion)) {
