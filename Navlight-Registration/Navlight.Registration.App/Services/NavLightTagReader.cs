@@ -61,6 +61,8 @@ public sealed class NavLightTagReader
         var pendingBuffer = new StringBuilder();
         try
         {
+            await InitializeReaderInterfaceAsync(serialPort, pendingBuffer, effectiveResponseTimeout, cancellationToken).ConfigureAwait(false);
+
             if (resetInterface)
             {
                 await SendCommandAsync(serialPort, pendingBuffer, "*T", cancellationToken, ignoreResponse: true).ConfigureAwait(false);
@@ -256,6 +258,46 @@ public sealed class NavLightTagReader
         CancellationToken cancellationToken)
     {
         return SendCommandAsync(serialPort, pendingBuffer, "T100", cancellationToken, ignoreResponse: true);
+    }
+
+    private static async Task InitializeReaderInterfaceAsync(
+        SerialPort serialPort,
+        StringBuilder pendingBuffer,
+        TimeSpan responseTimeout,
+        CancellationToken cancellationToken)
+    {
+        await SendCommandAsync(serialPort, pendingBuffer, "*]", cancellationToken, ignoreResponse: true).ConfigureAwait(false);
+
+        var waitTimeout = responseTimeout == Timeout.InfiniteTimeSpan
+            ? TimeSpan.FromMilliseconds(200)
+            : responseTimeout < TimeSpan.FromMilliseconds(200)
+                ? TimeSpan.FromMilliseconds(200)
+                : responseTimeout;
+
+        var deadline = DateTimeOffset.UtcNow.Add(waitTimeout);
+        var rawBuffer = new StringBuilder();
+
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var chunk = serialPort.ReadExisting();
+            if (!string.IsNullOrEmpty(chunk))
+            {
+                rawBuffer.Append(chunk);
+                var rawText = rawBuffer.ToString();
+                if (rawText.Contains('^') || rawText.Contains("Connected", StringComparison.OrdinalIgnoreCase))
+                {
+                    break;
+                }
+            }
+
+            await Task.Delay(10, cancellationToken).ConfigureAwait(false);
+        }
+
+        await SendCommandAsync(serialPort, pendingBuffer, "*T", cancellationToken, ignoreResponse: true).ConfigureAwait(false);
+        serialPort.DiscardInBuffer();
+        pendingBuffer.Clear();
     }
 
     private static async Task WaitForTagInsertionAsync(
