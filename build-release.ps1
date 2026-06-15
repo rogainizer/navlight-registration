@@ -14,7 +14,6 @@ $projectPath = Join-Path $registrationRoot "Navlight.Registration.App\Navlight.R
 $publishDir = Join-Path $OutputRoot "publish"
 $bundleRoot = Join-Path $OutputRoot "Navlight-Registration-Release"
 $payloadRoot = Join-Path $bundleRoot "payload"
-$zipPath = Join-Path $OutputRoot "navlight-registration-$RuntimeIdentifier.zip"
 $releaseVersion = (& git -C $repoRoot tag --points-at HEAD | Select-Object -First 1)
 if ([string]::IsNullOrWhiteSpace($releaseVersion)) {
     $releaseVersion = (& git -C $repoRoot rev-parse --short HEAD 2>$null)
@@ -22,6 +21,13 @@ if ([string]::IsNullOrWhiteSpace($releaseVersion)) {
 if ([string]::IsNullOrWhiteSpace($releaseVersion)) {
     $releaseVersion = "unknown"
 }
+
+$releaseVersionForFileName = ($releaseVersion -replace '[<>:"/\\|?*]', '-').Trim()
+if ([string]::IsNullOrWhiteSpace($releaseVersionForFileName)) {
+    $releaseVersionForFileName = "unknown"
+}
+
+$zipPath = Join-Path $OutputRoot "navlight-registration-$releaseVersionForFileName-$RuntimeIdentifier.zip"
 
 if (Test-Path -LiteralPath $publishDir) {
     Remove-Item -LiteralPath $publishDir -Recurse -Force
@@ -31,8 +37,8 @@ if (Test-Path -LiteralPath $bundleRoot) {
     Remove-Item -LiteralPath $bundleRoot -Recurse -Force
 }
 
-if (Test-Path -LiteralPath $zipPath) {
-    Remove-Item -LiteralPath $zipPath -Force
+if (Test-Path -LiteralPath $OutputRoot) {
+    Get-ChildItem -Path $OutputRoot -Filter "navlight-registration-*.zip" -File | Remove-Item -Force
 }
 
 New-Item -ItemType Directory -Path $publishDir | Out-Null
