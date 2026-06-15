@@ -21,6 +21,7 @@ public sealed class DatabaseOptions
             UserID = User,
             Password = Password,
             AllowUserVariables = true,
+            AllowPublicKeyRetrieval = true,
             SslMode = MySqlSslMode.None
         };
 
