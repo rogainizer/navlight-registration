@@ -2,7 +2,8 @@
 param(
     [string]$Configuration = "Release",
     [string]$RuntimeIdentifier = "win-x64",
-    [string]$OutputRoot
+    [string]$OutputRoot,
+    [string]$ReleaseVersion
 )
 
 $ErrorActionPreference = "Stop"
@@ -62,7 +63,12 @@ $installerMySqlPackagePath = Join-Path $installerRoot "Navlight.Installer\MySqlP
 $mysqlPackageCachePath = Join-Path $OutputRoot "MySqlPackage.zip"
 $bundleRoot = Join-Path $OutputRoot "Navlight-Registration-Release"
 $payloadRoot = Join-Path $bundleRoot "payload"
-$releaseVersion = (& git -C $repoRoot tag --points-at HEAD | Select-Object -First 1)
+if ([string]::IsNullOrWhiteSpace($releaseVersion)) {
+    $releaseVersion = $env:NAVLIGHT_RELEASE_VERSION
+}
+if ([string]::IsNullOrWhiteSpace($releaseVersion)) {
+    $releaseVersion = (& git -C $repoRoot tag --points-at HEAD | Select-Object -First 1)
+}
 if ([string]::IsNullOrWhiteSpace($releaseVersion)) {
     $releaseVersion = (& git -C $repoRoot rev-parse --short HEAD 2>$null)
 }

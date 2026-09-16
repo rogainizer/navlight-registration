@@ -22,6 +22,10 @@ permissions:
 jobs:
   build-release:
     runs-on: windows-latest
+    env:
+      # Version tag used in the asset file names, e.g. navlight-registration-2.1-win-x64.zip.
+      # Comes from the manual tag_name input, or the pushed tag name on tag pushes.
+      NAVLIGHT_RELEASE_VERSION: ${{ github.event.inputs.tag_name || github.ref_name }}
 
     steps:
       - name: Checkout
