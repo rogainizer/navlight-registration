@@ -35,7 +35,17 @@ Download the installer bundle from GitHub Releases:
 
 The release ZIP asset name includes the version, for example `navlight-registration-v1.0.0-win-x64.zip`.
 
-After extracting the ZIP, the main installer is `install-navlight.ps1`.
+After extracting the ZIP, the preferred installer is `navreg-installer.exe`, which uses standard Windows dialogs and does not require running PowerShell during install.
+
+`install-navlight-gui.ps1` and `install-navlight.ps1` are still included for compatibility and command-line automation.
+
+You can also build a single installer EXE from the ZIP:
+
+```powershell
+.\build-installer-exe.ps1
+```
+
+By default this finds the newest release ZIP in `dist\` and produces an EXE such as `dist\navreg-installer-v1.0.0-win-x64.exe`.
 
 The ZIP also includes `get-dhcp-reservation-info.ps1`, which prints the current adapter, IPv4 address, gateway, and MAC address to use when creating the router DHCP reservation for `navlighthost`.
 
@@ -51,6 +61,18 @@ Use this on the PC that will hold the shared MySQL database.
 4. Open PowerShell.
 5. Run:
 
+```text
+navreg-installer.exe
+```
+
+Alternative GUI script path:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\install-navlight-gui.ps1
+```
+
+Or run directly in command-line mode:
+
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\install-navlight.ps1 -InstallMode HostAndClient
 ```
@@ -62,7 +84,7 @@ The installer will:
 - show the current adapter, IPv4 address, and MAC address to help confirm the router reservation
 - ask you to confirm that the DHCP reservation already exists
 - verify that the host name resolves and responds to ping before continuing
-- optionally download the MySQL ZIP automatically, or let you point to a local MySQL ZIP file
+- use the embedded MySQL package automatically
 - install the app and database files
 - install the sample `Entries.xlsx` spreadsheet in the app's `EntryLists` folder
 - create shortcuts for the app and MySQL start/stop scripts
@@ -80,6 +102,18 @@ Use this when the app and database will both run on one PC and no other client P
 3. Open PowerShell.
 4. Run:
 
+```text
+navreg-installer.exe
+```
+
+Alternative GUI script path:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\install-navlight-gui.ps1
+```
+
+Or run directly in command-line mode:
+
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\install-navlight.ps1 -InstallMode SingleUser
 ```
@@ -89,6 +123,7 @@ The installer will:
 - prompt for the install folder
 - install the app and local MySQL database on the same PC
 - configure the app to connect to `localhost`
+- use the embedded MySQL package automatically
 - install the sample `Entries.xlsx` spreadsheet in the app's `EntryLists` folder
 - create shortcuts for the app and MySQL start/stop scripts
 
@@ -103,6 +138,18 @@ Use this on every additional PC that should connect to the host database.
 3. Open PowerShell.
 4. Run:
 
+```text
+navreg-installer.exe
+```
+
+Alternative GUI script path:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\install-navlight-gui.ps1
+```
+
+Or run directly in command-line mode:
+
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\install-navlight.ps1 -InstallMode ClientOnly
 ```
@@ -111,6 +158,7 @@ The installer will prompt for:
 
 - the install folder
 - the host PC hostname, normally `navlighthost`
+- the embedded MySQL package is used automatically
 
 ## Notes
 
@@ -127,6 +175,21 @@ If you are building the installer bundle locally from source, run this from the 
 ```
 
 This creates a versioned ZIP such as `dist\navlight-registration-v1.0.0-win-x64.zip`.
+
+## Build a single installer EXE
+
+After the ZIP exists, build the EXE wrapper:
+
+```powershell
+.\build-installer-exe.ps1
+```
+
+Optional parameters:
+
+- `-BundleZipPath` to choose a specific ZIP
+- `-OutputExePath` to set the EXE output path
+
+The EXE launches `navreg-installer.exe` first and falls back to script installers if needed. All paths support `ClientOnly`, `HostAndClient`, and `SingleUser` modes, and the installer uses the embedded MySQL package automatically.
 
 ## Create a GitHub release
 

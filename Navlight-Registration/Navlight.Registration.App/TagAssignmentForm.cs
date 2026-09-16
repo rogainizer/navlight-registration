@@ -14,6 +14,7 @@ public sealed class TagAssignmentForm : Form
     private readonly NavLightTagReader _tagReader;
     private TagReaderOptions _tagReaderOptions;
     private readonly TextBox _searchTextBox;
+    private readonly Label _searchHintLabel;
     private readonly ListBox _searchResultsListBox;
     private readonly TextBox _teamNumberTextBox;
     private readonly TextBox _teamNameTextBox;
@@ -29,6 +30,7 @@ public sealed class TagAssignmentForm : Form
     private readonly int? _initialTeamId;
     private TeamTagAssignment? _currentTeam;
     private bool _loadingTeam;
+    private bool _suppressSelectionHandling;
     private bool _initialTeamLoaded;
     private bool _busy;
     private bool _detectingReaderPort;
@@ -64,9 +66,10 @@ public sealed class TagAssignmentForm : Form
         var searchPanel = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
-            RowCount = 4,
+            RowCount = 5,
             ColumnCount = 1
         };
+        searchPanel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         searchPanel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         searchPanel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         searchPanel.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
@@ -88,11 +91,27 @@ public sealed class TagAssignmentForm : Form
         _searchTextBox.KeyDown += SearchTextBox_KeyDown;
         _searchTextBox.TextChanged += SearchTextBox_TextChanged;
 
+        _searchHintLabel = new Label
+        {
+            AutoSize = true,
+            ForeColor = Color.SteelBlue,
+            Margin = new Padding(0, 4, 0, 8)
+        };
+
         _searchResultsListBox = new ListBox
         {
-            Dock = DockStyle.Fill
+            Dock = DockStyle.Fill,
+            DrawMode = DrawMode.OwnerDrawFixed,
+            ItemHeight = 24
         };
-        _searchResultsListBox.SelectedIndexChanged += async (_, _) => await LoadSelectedTeamAsync();
+        _searchResultsListBox.SelectedIndexChanged += async (_, _) =>
+        {
+            if (!_suppressSelectionHandling)
+            {
+                await LoadSelectedTeamAsync();
+            }
+        };
+        _searchResultsListBox.DrawItem += SearchResultsListBox_DrawItem;
 
         _statusLabel = new Label
         {
@@ -104,8 +123,9 @@ public sealed class TagAssignmentForm : Form
 
         searchPanel.Controls.Add(searchLabel, 0, 0);
         searchPanel.Controls.Add(_searchTextBox, 0, 1);
-        searchPanel.Controls.Add(_searchResultsListBox, 0, 2);
-        searchPanel.Controls.Add(_statusLabel, 0, 3);
+        searchPanel.Controls.Add(_searchHintLabel, 0, 2);
+        searchPanel.Controls.Add(_searchResultsListBox, 0, 3);
+        searchPanel.Controls.Add(_statusLabel, 0, 4);
 
         var detailsLayout = new TableLayoutPanel
         {
@@ -513,6 +533,13 @@ public sealed class TagAssignmentForm : Form
 
     private async void SearchTextBox_KeyDown(object? sender, KeyEventArgs e)
     {
+        if (e.KeyCode == Keys.Escape)
+        {
+            e.SuppressKeyPress = true;
+            _searchTextBox.Clear();
+            return;
+        }
+
         if (e.KeyCode != Keys.Enter)
         {
             return;
@@ -532,7 +559,8 @@ public sealed class TagAssignmentForm : Form
     private void SearchTextBox_TextChanged(object? sender, EventArgs e)
     {
         var searchTerm = _searchTextBox.Text.Trim();
-        if (searchTerm.Length < MinimumSearchLength)
+        UpdateSearchHint(searchTerm);
+        if (!IsImmediateTeamNumberSearch(searchTerm) && searchTerm.Length < MinimumSearchLength)
         {
             _searchDebounceTimer.Stop();
             ClearTeamDetails();
@@ -549,6 +577,36 @@ public sealed class TagAssignmentForm : Form
         UpdateTagStatus(ParseTagCodes(_tagCodesTextBox.Text).Count);
     }
 
+    private static bool IsImmediateTeamNumberSearch(string searchTerm)
+    {
+        return !string.IsNullOrWhiteSpace(searchTerm) && searchTerm.All(char.IsDigit);
+    }
+
+    private void UpdateSearchHint(string searchTerm)
+    {
+        _searchHintLabel.Text = searchTerm.Length switch
+        {
+            0 => string.Empty,
+            _ when IsImmediateTeamNumberSearch(searchTerm) => "Searching by team number",
+            _ => "Searching by team name"
+        };
+    }
+
+    private void SearchResultsListBox_DrawItem(object? sender, DrawItemEventArgs e)
+    {
+        e.DrawBackground();
+        if (e.Index >= 0 && _searchResultsListBox.Items[e.Index] is TeamSearchResult team)
+        {
+            var baseFont = e.Font ?? Font;
+            using var brush = new SolidBrush(team.Registered ? Color.SeaGreen : e.ForeColor);
+            using var boldFont = team.Registered ? new Font(baseFont, FontStyle.Bold) : null;
+            using var stringFormat = new StringFormat { LineAlignment = StringAlignment.Center };
+            e.Graphics.DrawString(team.DisplayText, boldFont ?? baseFont, brush, e.Bounds, stringFormat);
+        }
+
+        e.DrawFocusRectangle();
+    }
+
     private async Task SearchTeamsAsync(bool forceSearch = false)
     {
         var searchTerm = _searchTextBox.Text.Trim();
@@ -559,7 +617,7 @@ public sealed class TagAssignmentForm : Form
             return;
         }
 
-        if (!forceSearch && searchTerm.Length < MinimumSearchLength)
+        if (!forceSearch && !IsImmediateTeamNumberSearch(searchTerm) && searchTerm.Length < MinimumSearchLength)
         {
             ClearTeamDetails();
             SetStatus($"Type at least {MinimumSearchLength} characters to search.");
@@ -577,14 +635,12 @@ public sealed class TagAssignmentForm : Form
                 return;
             }
 
+            _suppressSelectionHandling = true;
             _searchResultsListBox.DataSource = results;
             _searchResultsListBox.DisplayMember = nameof(TeamSearchResult.DisplayText);
             _searchResultsListBox.ValueMember = nameof(TeamSearchResult.TeamId);
-
-            if (results.Count > 0)
-            {
-                _searchResultsListBox.SelectedIndex = 0;
-            }
+            _searchResultsListBox.ClearSelected();
+            _suppressSelectionHandling = false;
 
             SetStatus(results.Count == 0 ? "No matching teams found." : $"Found {results.Count} matching team(s).");
         }
@@ -670,6 +726,7 @@ public sealed class TagAssignmentForm : Form
         _searchResultsListBox.DataSource = null;
         _currentTeam = null;
         _searchRequestVersion++;
+        _searchHintLabel.Text = string.Empty;
         _teamNumberTextBox.Clear();
         _teamNameTextBox.Clear();
         _loadedTagCodes = string.Empty;
@@ -703,7 +760,6 @@ public sealed class TagAssignmentForm : Form
     {
         _busy = busy;
         UseWaitCursor = busy;
-        _searchTextBox.Enabled = !busy;
         _searchResultsListBox.Enabled = !busy;
         UpdateAssignTagButtonState();
         _saveButton.Enabled = !busy && _currentTeam is not null;
@@ -775,7 +831,7 @@ public sealed class TagAssignmentForm : Form
 
     private void SetStatus(string message, bool isError = false)
     {
-        _statusLabel.Text = message;
+        _statusLabel.Text = isError ? $"\u26A0 {message}" : message;
         _statusLabel.ForeColor = isError ? Color.Firebrick : Color.DimGray;
     }
 }

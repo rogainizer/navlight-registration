@@ -16,7 +16,10 @@ param(
     [ValidateRange(1, 32)]
     [int]$PrefixLength = 24,
     [string]$DefaultGateway,
-    [string[]]$DnsServers = @()
+    [string[]]$DnsServers = @(),
+    [switch]$NonInteractive,
+    [switch]$DhcpReservationConfirmed,
+    [switch]$DownloadMySqlAutomatically
 )
 
 $ErrorActionPreference = "Stop"
@@ -253,25 +256,35 @@ function Download-File {
 }
 
 if ([string]::IsNullOrWhiteSpace($InstallMode)) {
-    Write-Host "Choose installation mode:"
-    Write-Host "1. Client only"
-    Write-Host "2. Host and client"
-    Write-Host "3. Single user"
-    do {
-        $selection = Read-Host "Enter 1, 2, or 3"
+    if ($NonInteractive) {
+        throw "InstallMode is required when running with -NonInteractive."
     }
-    until ($selection -in @("1", "2", "3"))
+    else {
+        Write-Host "Choose installation mode:"
+        Write-Host "1. Client only"
+        Write-Host "2. Host and client"
+        Write-Host "3. Single user"
+        do {
+            $selection = Read-Host "Enter 1, 2, or 3"
+        }
+        until ($selection -in @("1", "2", "3"))
 
-    $InstallMode = switch ($selection) {
-        "1" { "ClientOnly" }
-        "2" { "HostAndClient" }
-        default { "SingleUser" }
+        $InstallMode = switch ($selection) {
+            "1" { "ClientOnly" }
+            "2" { "HostAndClient" }
+            default { "SingleUser" }
+        }
     }
 }
 
 if ([string]::IsNullOrWhiteSpace($InstallRoot)) {
-    $defaultInstallRoot = Join-Path (Get-Location).Path "NavlightRegistration"
-    $InstallRoot = Read-ValueWithDefault -Prompt "Install folder" -DefaultValue $defaultInstallRoot
+    if ($NonInteractive) {
+        throw "InstallRoot is required when running with -NonInteractive."
+    }
+    else {
+        $defaultInstallRoot = Join-Path (Get-Location).Path "NavlightRegistration"
+        $InstallRoot = Read-ValueWithDefault -Prompt "Install folder" -DefaultValue $defaultInstallRoot
+    }
 }
 
 if ($ConfigureStaticIp -or
@@ -298,7 +311,12 @@ if (-not (Test-Path -LiteralPath $sourceAppDir)) {
 }
 
 if ($InstallMode -eq "ClientOnly" -and [string]::IsNullOrWhiteSpace($DatabaseServer)) {
-    $DatabaseServer = Read-RequiredValue -Prompt "Enter the database host name" -DefaultValue "navlighthost"
+    if ($NonInteractive) {
+        throw "DatabaseServer is required for ClientOnly mode when running with -NonInteractive."
+    }
+    else {
+        $DatabaseServer = Read-RequiredValue -Prompt "Enter the database host name" -DefaultValue "navlighthost"
+    }
 }
 
 Ensure-Directory -Path $InstallRoot
@@ -337,14 +355,25 @@ if ($InstallMode -eq "HostAndClient") {
         }
     }
 
-    $resolvedDatabaseServer = Read-ValueWithDefault -Prompt "Host name for other client PCs to use" -DefaultValue $resolvedDatabaseServer
-    if ([string]::IsNullOrWhiteSpace($resolvedDatabaseServer)) {
-        throw "Host installs require a client-facing host name."
-    }
+    if ($NonInteractive) {
+        if ([string]::IsNullOrWhiteSpace($resolvedDatabaseServer)) {
+            throw "Host installs require a client-facing host name when running with -NonInteractive."
+        }
 
-    $reservationConfirmed = Read-YesNo -Prompt "Have you already created a DHCP reservation on the router for this host so clients will always use $resolvedDatabaseServer" -DefaultValue $false
-    if (-not $reservationConfirmed) {
-        throw "Host install stopped. Create the DHCP reservation on the router first, then rerun the installer."
+        if (-not $DhcpReservationConfirmed) {
+            throw "Host install stopped. Pass -DhcpReservationConfirmed after creating the router DHCP reservation."
+        }
+    }
+    else {
+        $resolvedDatabaseServer = Read-ValueWithDefault -Prompt "Host name for other client PCs to use" -DefaultValue $resolvedDatabaseServer
+        if ([string]::IsNullOrWhiteSpace($resolvedDatabaseServer)) {
+            throw "Host installs require a client-facing host name."
+        }
+
+        $reservationConfirmed = Read-YesNo -Prompt "Have you already created a DHCP reservation on the router for this host so clients will always use $resolvedDatabaseServer" -DefaultValue $false
+        if (-not $reservationConfirmed) {
+            throw "Host install stopped. Create the DHCP reservation on the router first, then rerun the installer."
+        }
     }
 
     Write-Host "Checking that hostname '$resolvedDatabaseServer' resolves on this PC..."
@@ -375,7 +404,8 @@ if ($InstallMode -in @("HostAndClient", "SingleUser")) {
         $resolvedMySqlZipPath = $MySqlZipPath
 
         if ([string]::IsNullOrWhiteSpace($resolvedMySqlZipPath)) {
-            if (Read-YesNo -Prompt "Download MySQL automatically during install" -DefaultValue $true) {
+            $shouldDownloadMySql = if ($NonInteractive) { [bool]$DownloadMySqlAutomatically } else { Read-YesNo -Prompt "Download MySQL automatically during install" -DefaultValue $true }
+            if ($shouldDownloadMySql) {
                 $resolvedMySqlZipPath = Join-Path $env:TEMP "navlight-mysql.zip"
                 $downloadCandidates = Get-MySqlDownloadCandidates -Uri $MySqlDownloadUrl
                 Write-Host "Downloading MySQL archive..."
@@ -383,7 +413,12 @@ if ($InstallMode -in @("HostAndClient", "SingleUser")) {
                 Write-Host "Downloaded MySQL archive from $downloadUri"
             }
             else {
-                $resolvedMySqlZipPath = Read-RequiredValue -Prompt "Path to MySQL ZIP archive" -DefaultValue ""
+                if ($NonInteractive) {
+                    throw "MySqlZipPath is required in non-interactive host or single-user installs when -DownloadMySqlAutomatically is not set."
+                }
+                else {
+                    $resolvedMySqlZipPath = Read-RequiredValue -Prompt "Path to MySQL ZIP archive" -DefaultValue ""
+                }
             }
         }
 

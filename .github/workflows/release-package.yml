@@ -36,11 +36,17 @@ jobs:
         shell: pwsh
         run: ./build-release.ps1 -Configuration Release
 
+      - name: Build installer EXE
+        shell: pwsh
+        run: ./build-installer-exe.ps1
+
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
         with:
           name: navlight-registration
-          path: dist/navlight-registration-*.zip
+          path: |
+            dist/navlight-registration-*.zip
+            dist/navreg-installer-*.exe
 
       - name: Attach ZIP to GitHub release
         if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
@@ -48,4 +54,6 @@ jobs:
         with:
           tag_name: ${{ github.event.inputs.tag_name || github.ref_name }}
           name: ${{ github.event.inputs.release_name || 'NavlightRegistration' }}
-          files: dist/navlight-registration-*.zip
+          files: |
+            dist/navlight-registration-*.zip
+            dist/navreg-installer-*.exe

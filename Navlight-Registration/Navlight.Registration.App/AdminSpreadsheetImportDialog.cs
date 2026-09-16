@@ -432,7 +432,7 @@ public sealed class AdminSpreadsheetImportDialog : Form
 
     private void SetStatus(string message, bool isError = false)
     {
-        _statusLabel.Text = message;
+        _statusLabel.Text = isError ? $"\u26A0 {message}" : message;
         _statusLabel.ForeColor = isError ? Color.Firebrick : Color.DimGray;
     }
 

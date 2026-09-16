@@ -122,8 +122,13 @@ public sealed class AdminForm : Form
             AutoSize = true,
             Height = 36,
             Anchor = AnchorStyles.Right,
-            Margin = new Padding(0, 0, 8, 0)
+            Margin = new Padding(0, 0, 8, 0),
+            FlatStyle = FlatStyle.Flat,
+            ForeColor = Color.Firebrick,
+            Font = new Font(Font, FontStyle.Bold)
         };
+        _clearDatabaseButton.FlatAppearance.BorderColor = Color.Firebrick;
+        _clearDatabaseButton.FlatAppearance.BorderSize = 1;
         _clearDatabaseButton.Click += async (_, _) => await ClearDatabaseAsync();
 
         _exportButton = new Button
@@ -132,7 +137,7 @@ public sealed class AdminForm : Form
             AutoSize = true,
             Height = 36,
             Anchor = AnchorStyles.Right,
-            Margin = new Padding(0, 0, 8, 0)
+            Margin = new Padding(20, 0, 8, 0)
         };
         _exportButton.Click += async (_, _) => await ExportDatabaseAsync();
 
@@ -1158,7 +1163,7 @@ public sealed class AdminForm : Form
 
     private void SetStatus(string message, bool isError = false)
     {
-        _statusLabel.Text = message;
+        _statusLabel.Text = isError ? $"\u26A0 {message}" : message;
         _statusLabel.ForeColor = isError ? Color.Firebrick : Color.DimGray;
     }
 

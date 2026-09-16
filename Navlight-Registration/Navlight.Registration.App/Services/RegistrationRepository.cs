@@ -1,4 +1,4 @@
-using MySqlConnector;
+﻿using MySqlConnector;
 using Navlight.Registration.App.Models;
 
 namespace Navlight.Registration.App.Services;
@@ -6,10 +6,62 @@ namespace Navlight.Registration.App.Services;
 public sealed class RegistrationRepository
 {
     private readonly string _connectionString;
+    private readonly DatabaseOptions _databaseOptions;
 
     public RegistrationRepository(DatabaseOptions options)
     {
+        _databaseOptions = options;
         _connectionString = options.ToConnectionString();
+    }
+
+    private async Task<MySqlConnection> OpenConnectionAsync()
+    {
+        if (MySqlAutoStarter.ShouldAttemptLocalStart(_databaseOptions.Server))
+        {
+            MySqlAutoStarter.EnsureStartedIfNeeded(_databaseOptions);
+        }
+
+        MySqlInteractionLogger.LogConnectionAttempt(_databaseOptions, "initial");
+        var connection = new MySqlConnection(_connectionString);
+        try
+        {
+            await connection.OpenAsync();
+            MySqlInteractionLogger.LogInfo("Connection open success (initial)");
+            return connection;
+        }
+        catch (Exception ex) when (ShouldRetryAfterAutoStart(ex))
+        {
+            MySqlInteractionLogger.LogError($"Connection open failed (initial): {ex.Message}");
+            await connection.DisposeAsync();
+            MySqlAutoStarter.EnsureStartedIfNeeded(_databaseOptions);
+
+            MySqlInteractionLogger.LogConnectionAttempt(_databaseOptions, "retry-after-autostart");
+            var retryConnection = new MySqlConnection(_connectionString);
+            await retryConnection.OpenAsync();
+            MySqlInteractionLogger.LogInfo("Connection open success (retry-after-autostart)");
+            return retryConnection;
+        }
+        catch
+        {
+            await connection.DisposeAsync();
+            throw;
+        }
+    }
+
+    private static bool ShouldRetryAfterAutoStart(Exception ex)
+    {
+        if (ex is MySqlException mySqlEx)
+        {
+            return mySqlEx.ErrorCode == MySqlErrorCode.UnableToConnectToHost
+                   || mySqlEx.Number == 1042
+                   || mySqlEx.Number == 0
+                   || mySqlEx.Message.Contains("Unable to connect", StringComparison.OrdinalIgnoreCase)
+                   || mySqlEx.Message.Contains("specified MySQL hosts", StringComparison.OrdinalIgnoreCase);
+        }
+
+        return ex.Message.Contains("Unable to connect", StringComparison.OrdinalIgnoreCase)
+               || ex.Message.Contains("specified MySQL hosts", StringComparison.OrdinalIgnoreCase)
+               || (ex.InnerException is not null && ShouldRetryAfterAutoStart(ex.InnerException));
     }
 
     public async Task<IReadOnlyList<TeamSearchResult>> SearchTeamsAsync(string searchTerm, bool registeredOnly = false)
@@ -20,24 +72,23 @@ public sealed class RegistrationRepository
         const string sql = """
             SELECT TeamId, TeamNumber, Name, Registered
             FROM Team
-                        WHERE ((@searchByTeamNumber = 1 AND TeamNumber = @teamNumber)
+                        WHERE ((@searchByTeamNumber = 1 AND TeamNumber LIKE @teamNumberPrefix)
                                      OR (@searchByTeamNumber = 0 AND Name LIKE @searchTerm))
               AND (@registeredOnly = 0 OR Registered = 1)
             ORDER BY Name
             LIMIT 50;
             """;
 
-        await using var connection = new MySqlConnection(_connectionString);
-        await connection.OpenAsync();
+        await using var connection = await OpenConnectionAsync();
 
         await using var command = new MySqlCommand(sql, connection);
         command.Parameters.AddWithValue("@searchByTeamNumber", searchByTeamNumber);
-        command.Parameters.AddWithValue("@teamNumber", trimmedSearchTerm);
+        command.Parameters.AddWithValue("@teamNumberPrefix", $"{trimmedSearchTerm}%");
         command.Parameters.AddWithValue("@searchTerm", $"%{trimmedSearchTerm}%");
         command.Parameters.AddWithValue("@registeredOnly", registeredOnly);
 
         var results = new List<TeamSearchResult>();
-        await using var reader = await command.ExecuteReaderAsync();
+        await using var reader = await ExecuteReaderLoggedAsync(command);
         while (await reader.ReadAsync())
         {
             results.Add(new TeamSearchResult
@@ -67,15 +118,14 @@ public sealed class RegistrationRepository
             ORDER BY Name;
             """;
 
-        await using var connection = new MySqlConnection(_connectionString);
-        await connection.OpenAsync();
+        await using var connection = await OpenConnectionAsync();
 
         TeamRegistration? registration = null;
 
         await using (var teamCommand = new MySqlCommand(teamSql, connection))
         {
             teamCommand.Parameters.AddWithValue("@teamId", teamId);
-            await using var reader = await teamCommand.ExecuteReaderAsync();
+            await using var reader = await ExecuteReaderLoggedAsync(teamCommand);
             if (await reader.ReadAsync())
             {
                 var registeredAtOrdinal = reader.GetOrdinal("RegisteredAt");
@@ -105,7 +155,7 @@ public sealed class RegistrationRepository
         await using (var competitorCommand = new MySqlCommand(competitorSql, connection))
         {
             competitorCommand.Parameters.AddWithValue("@teamId", teamId);
-            await using var reader = await competitorCommand.ExecuteReaderAsync();
+            await using var reader = await ExecuteReaderLoggedAsync(competitorCommand);
             while (await reader.ReadAsync())
             {
                 registration.Competitors.Add(new CompetitorRecord
@@ -130,12 +180,11 @@ public sealed class RegistrationRepository
             ORDER BY TagCode;
             """;
 
-        await using var connection = new MySqlConnection(_connectionString);
-        await connection.OpenAsync();
+        await using var connection = await OpenConnectionAsync();
 
         await using var tagCommand = new MySqlCommand(tagsSql, connection);
         tagCommand.Parameters.AddWithValue("@teamId", teamId);
-        await using var reader = await tagCommand.ExecuteReaderAsync();
+        await using var reader = await ExecuteReaderLoggedAsync(tagCommand);
         while (await reader.ReadAsync())
         {
             registration.TagCodes.Add(reader.GetString("TagCode"));
@@ -154,14 +203,13 @@ public sealed class RegistrationRepository
             ORDER BY Name;
             """;
 
-        await using var connection = new MySqlConnection(_connectionString);
-        await connection.OpenAsync();
+        await using var connection = await OpenConnectionAsync();
 
         await using var command = new MySqlCommand(sql, connection);
         command.Parameters.AddWithValue("@eventId", eventId);
 
         var categories = new List<CategoryOption>();
-        await using var reader = await command.ExecuteReaderAsync();
+        await using var reader = await ExecuteReaderLoggedAsync(command);
         while (await reader.ReadAsync())
         {
             categories.Add(new CategoryOption
@@ -184,14 +232,13 @@ public sealed class RegistrationRepository
             ORDER BY Name;
             """;
 
-        await using var connection = new MySqlConnection(_connectionString);
-        await connection.OpenAsync();
+        await using var connection = await OpenConnectionAsync();
 
         await using var command = new MySqlCommand(sql, connection);
         command.Parameters.AddWithValue("@eventId", eventId);
 
         var courses = new List<CourseOption>();
-        await using var reader = await command.ExecuteReaderAsync();
+        await using var reader = await ExecuteReaderLoggedAsync(command);
         while (await reader.ReadAsync())
         {
             courses.Add(new CourseOption
@@ -230,8 +277,7 @@ public sealed class RegistrationRepository
         const string deleteCompetitorsSql = "DELETE FROM Competitor WHERE TeamId = @teamId;";
         const string insertCompetitorSql = "INSERT INTO Competitor (TeamId, Name) VALUES (@teamId, @name);";
 
-        await using var connection = new MySqlConnection(_connectionString);
-        await connection.OpenAsync();
+        await using var connection = await OpenConnectionAsync();
         await using var transaction = await connection.BeginTransactionAsync();
 
         try
@@ -244,13 +290,13 @@ public sealed class RegistrationRepository
                 updateTeamCommand.Parameters.AddWithValue("@courseId", registration.CourseId);
                 updateTeamCommand.Parameters.AddWithValue("@flightPlan", registration.FlightPlan);
                 updateTeamCommand.Parameters.AddWithValue("@lastUpdatedAt", registration.LastUpdatedAt);
-                ThrowIfConcurrencyConflict(await updateTeamCommand.ExecuteNonQueryAsync());
+                ThrowIfConcurrencyConflict(await ExecuteNonQueryLoggedAsync(updateTeamCommand));
             }
 
             await using (var deleteCommand = new MySqlCommand(deleteCompetitorsSql, connection, transaction))
             {
                 deleteCommand.Parameters.AddWithValue("@teamId", registration.TeamId);
-                await deleteCommand.ExecuteNonQueryAsync();
+                await ExecuteNonQueryLoggedAsync(deleteCommand);
             }
 
             foreach (var competitor in registration.Competitors)
@@ -258,7 +304,7 @@ public sealed class RegistrationRepository
                 await using var insertCommand = new MySqlCommand(insertCompetitorSql, connection, transaction);
                 insertCommand.Parameters.AddWithValue("@teamId", registration.TeamId);
                 insertCommand.Parameters.AddWithValue("@name", competitor.Name);
-                await insertCommand.ExecuteNonQueryAsync();
+                await ExecuteNonQueryLoggedAsync(insertCommand);
             }
 
             await transaction.CommitAsync();
@@ -298,8 +344,7 @@ public sealed class RegistrationRepository
         const string deleteTagsSql = "DELETE FROM TagAssignment WHERE TeamId = @teamId;";
         const string insertTagSql = "INSERT INTO TagAssignment (TeamId, TagCode) VALUES (@teamId, @tagCode);";
 
-        await using var connection = new MySqlConnection(_connectionString);
-        await connection.OpenAsync();
+        await using var connection = await OpenConnectionAsync();
         await using var transaction = await connection.BeginTransactionAsync();
 
         try
@@ -312,13 +357,13 @@ public sealed class RegistrationRepository
                 updateTeamCommand.Parameters.AddWithValue("@courseId", registration.CourseId);
                 updateTeamCommand.Parameters.AddWithValue("@flightPlan", registration.FlightPlan);
                 updateTeamCommand.Parameters.AddWithValue("@lastUpdatedAt", registration.LastUpdatedAt);
-                ThrowIfConcurrencyConflict(await updateTeamCommand.ExecuteNonQueryAsync());
+                ThrowIfConcurrencyConflict(await ExecuteNonQueryLoggedAsync(updateTeamCommand));
             }
 
             await using (var deleteCompetitorsCommand = new MySqlCommand(deleteCompetitorsSql, connection, transaction))
             {
                 deleteCompetitorsCommand.Parameters.AddWithValue("@teamId", registration.TeamId);
-                await deleteCompetitorsCommand.ExecuteNonQueryAsync();
+                await ExecuteNonQueryLoggedAsync(deleteCompetitorsCommand);
             }
 
             foreach (var competitor in registration.Competitors)
@@ -326,13 +371,13 @@ public sealed class RegistrationRepository
                 await using var insertCompetitorCommand = new MySqlCommand(insertCompetitorSql, connection, transaction);
                 insertCompetitorCommand.Parameters.AddWithValue("@teamId", registration.TeamId);
                 insertCompetitorCommand.Parameters.AddWithValue("@name", competitor.Name);
-                await insertCompetitorCommand.ExecuteNonQueryAsync();
+                await ExecuteNonQueryLoggedAsync(insertCompetitorCommand);
             }
 
             await using (var deleteTagsCommand = new MySqlCommand(deleteTagsSql, connection, transaction))
             {
                 deleteTagsCommand.Parameters.AddWithValue("@teamId", registration.TeamId);
-                await deleteTagsCommand.ExecuteNonQueryAsync();
+                await ExecuteNonQueryLoggedAsync(deleteTagsCommand);
             }
 
             foreach (var tagCode in registration.TagCodes)
@@ -340,7 +385,7 @@ public sealed class RegistrationRepository
                 await using var insertTagCommand = new MySqlCommand(insertTagSql, connection, transaction);
                 insertTagCommand.Parameters.AddWithValue("@teamId", registration.TeamId);
                 insertTagCommand.Parameters.AddWithValue("@tagCode", tagCode);
-                await insertTagCommand.ExecuteNonQueryAsync();
+                await ExecuteNonQueryLoggedAsync(insertTagCommand);
             }
 
             await transaction.CommitAsync();
@@ -394,8 +439,7 @@ public sealed class RegistrationRepository
         const string deleteTagsSql = "DELETE FROM TagAssignment WHERE TeamId = @teamId;";
         const string insertTagSql = "INSERT INTO TagAssignment (TeamId, TagCode) VALUES (@teamId, @tagCode);";
 
-        await using var connection = new MySqlConnection(_connectionString);
-        await connection.OpenAsync();
+        await using var connection = await OpenConnectionAsync();
         await using var transaction = await connection.BeginTransactionAsync();
         var teamId = registration.TeamId;
 
@@ -412,7 +456,7 @@ public sealed class RegistrationRepository
                 insertTeamCommand.Parameters.AddWithValue("@registered", registration.Registered);
                 insertTeamCommand.Parameters.AddWithValue("@flightPlan", registration.FlightPlan);
                 insertTeamCommand.Parameters.AddWithValue("@flightPlanAt", registration.FlightPlanAt);
-                teamId = Convert.ToInt32(await insertTeamCommand.ExecuteScalarAsync());
+                teamId = Convert.ToInt32(await ExecuteScalarLoggedAsync(insertTeamCommand));
             }
             else
             {
@@ -426,13 +470,13 @@ public sealed class RegistrationRepository
                 updateTeamCommand.Parameters.AddWithValue("@flightPlan", registration.FlightPlan);
                 updateTeamCommand.Parameters.AddWithValue("@flightPlanAt", registration.FlightPlanAt);
                 updateTeamCommand.Parameters.AddWithValue("@lastUpdatedAt", registration.LastUpdatedAt);
-                ThrowIfConcurrencyConflict(await updateTeamCommand.ExecuteNonQueryAsync());
+                ThrowIfConcurrencyConflict(await ExecuteNonQueryLoggedAsync(updateTeamCommand));
             }
 
             await using (var deleteCompetitorsCommand = new MySqlCommand(deleteCompetitorsSql, connection, transaction))
             {
                 deleteCompetitorsCommand.Parameters.AddWithValue("@teamId", teamId);
-                await deleteCompetitorsCommand.ExecuteNonQueryAsync();
+                await ExecuteNonQueryLoggedAsync(deleteCompetitorsCommand);
             }
 
             foreach (var competitor in registration.Competitors)
@@ -440,13 +484,13 @@ public sealed class RegistrationRepository
                 await using var insertCompetitorCommand = new MySqlCommand(insertCompetitorSql, connection, transaction);
                 insertCompetitorCommand.Parameters.AddWithValue("@teamId", teamId);
                 insertCompetitorCommand.Parameters.AddWithValue("@name", competitor.Name);
-                await insertCompetitorCommand.ExecuteNonQueryAsync();
+                await ExecuteNonQueryLoggedAsync(insertCompetitorCommand);
             }
 
             await using (var deleteTagsCommand = new MySqlCommand(deleteTagsSql, connection, transaction))
             {
                 deleteTagsCommand.Parameters.AddWithValue("@teamId", teamId);
-                await deleteTagsCommand.ExecuteNonQueryAsync();
+                await ExecuteNonQueryLoggedAsync(deleteTagsCommand);
             }
 
             foreach (var tagCode in registration.TagCodes)
@@ -454,7 +498,7 @@ public sealed class RegistrationRepository
                 await using var insertTagCommand = new MySqlCommand(insertTagSql, connection, transaction);
                 insertTagCommand.Parameters.AddWithValue("@teamId", teamId);
                 insertTagCommand.Parameters.AddWithValue("@tagCode", tagCode);
-                await insertTagCommand.ExecuteNonQueryAsync();
+                await ExecuteNonQueryLoggedAsync(insertTagCommand);
             }
 
             await transaction.CommitAsync();
@@ -475,11 +519,10 @@ public sealed class RegistrationRepository
             LIMIT 1;
             """;
 
-        await using var connection = new MySqlConnection(_connectionString);
-        await connection.OpenAsync();
+        await using var connection = await OpenConnectionAsync();
 
         await using var command = new MySqlCommand(sql, connection);
-        var result = await command.ExecuteScalarAsync();
+        var result = await ExecuteScalarLoggedAsync(command);
         if (result is null)
         {
             throw new InvalidOperationException("No event exists. Create an event before adding teams.");
@@ -504,15 +547,14 @@ public sealed class RegistrationRepository
             SELECT LAST_INSERT_ID();
             """;
 
-        await using var connection = new MySqlConnection(_connectionString);
-        await connection.OpenAsync();
+        await using var connection = await OpenConnectionAsync();
 
         await using (var selectCommand = new MySqlCommand(selectSql, connection))
         {
             selectCommand.Parameters.AddWithValue("@name", eventName);
             selectCommand.Parameters.AddWithValue("@eventDate", eventDate);
 
-            var existingEventId = await selectCommand.ExecuteScalarAsync();
+            var existingEventId = await ExecuteScalarLoggedAsync(selectCommand);
             if (existingEventId is not null)
             {
                 return Convert.ToInt32(existingEventId);
@@ -522,7 +564,7 @@ public sealed class RegistrationRepository
         await using var insertCommand = new MySqlCommand(insertSql, connection);
         insertCommand.Parameters.AddWithValue("@name", eventName);
         insertCommand.Parameters.AddWithValue("@eventDate", eventDate);
-        return Convert.ToInt32(await insertCommand.ExecuteScalarAsync());
+        return Convert.ToInt32(await ExecuteScalarLoggedAsync(insertCommand));
     }
 
     public async Task<int> CreateCategoryAsync(int eventId, string categoryName)
@@ -533,13 +575,12 @@ public sealed class RegistrationRepository
             SELECT LAST_INSERT_ID();
             """;
 
-        await using var connection = new MySqlConnection(_connectionString);
-        await connection.OpenAsync();
+        await using var connection = await OpenConnectionAsync();
 
         await using var command = new MySqlCommand(sql, connection);
         command.Parameters.AddWithValue("@eventId", eventId);
         command.Parameters.AddWithValue("@name", categoryName);
-        return Convert.ToInt32(await command.ExecuteScalarAsync());
+        return Convert.ToInt32(await ExecuteScalarLoggedAsync(command));
     }
 
     public async Task<int> CreateCourseAsync(int eventId, string courseName)
@@ -550,13 +591,12 @@ public sealed class RegistrationRepository
             SELECT LAST_INSERT_ID();
             """;
 
-        await using var connection = new MySqlConnection(_connectionString);
-        await connection.OpenAsync();
+        await using var connection = await OpenConnectionAsync();
 
         await using var command = new MySqlCommand(sql, connection);
         command.Parameters.AddWithValue("@eventId", eventId);
         command.Parameters.AddWithValue("@name", courseName);
-        return Convert.ToInt32(await command.ExecuteScalarAsync());
+        return Convert.ToInt32(await ExecuteScalarLoggedAsync(command));
     }
 
     public async Task<int?> GetTeamIdByNumberAsync(int eventId, string teamNumber)
@@ -569,14 +609,13 @@ public sealed class RegistrationRepository
             LIMIT 1;
             """;
 
-        await using var connection = new MySqlConnection(_connectionString);
-        await connection.OpenAsync();
+        await using var connection = await OpenConnectionAsync();
 
         await using var command = new MySqlCommand(sql, connection);
         command.Parameters.AddWithValue("@eventId", eventId);
         command.Parameters.AddWithValue("@teamNumber", teamNumber);
 
-        var result = await command.ExecuteScalarAsync();
+        var result = await ExecuteScalarLoggedAsync(command);
         return result is null ? null : Convert.ToInt32(result);
     }
 
@@ -589,40 +628,39 @@ public sealed class RegistrationRepository
         const string deleteCoursesSql = "DELETE FROM Course;";
         const string deleteEventsSql = "DELETE FROM Event;";
 
-        await using var connection = new MySqlConnection(_connectionString);
-        await connection.OpenAsync();
+        await using var connection = await OpenConnectionAsync();
         await using var transaction = await connection.BeginTransactionAsync();
 
         try
         {
             await using (var command = new MySqlCommand(deleteTagAssignmentsSql, connection, transaction))
             {
-                await command.ExecuteNonQueryAsync();
+                await ExecuteNonQueryLoggedAsync(command);
             }
 
             await using (var command = new MySqlCommand(deleteCompetitorsSql, connection, transaction))
             {
-                await command.ExecuteNonQueryAsync();
+                await ExecuteNonQueryLoggedAsync(command);
             }
 
             await using (var command = new MySqlCommand(deleteTeamsSql, connection, transaction))
             {
-                await command.ExecuteNonQueryAsync();
+                await ExecuteNonQueryLoggedAsync(command);
             }
 
             await using (var command = new MySqlCommand(deleteCategoriesSql, connection, transaction))
             {
-                await command.ExecuteNonQueryAsync();
+                await ExecuteNonQueryLoggedAsync(command);
             }
 
             await using (var command = new MySqlCommand(deleteCoursesSql, connection, transaction))
             {
-                await command.ExecuteNonQueryAsync();
+                await ExecuteNonQueryLoggedAsync(command);
             }
 
             await using (var command = new MySqlCommand(deleteEventsSql, connection, transaction))
             {
-                await command.ExecuteNonQueryAsync();
+                await ExecuteNonQueryLoggedAsync(command);
             }
 
             await transaction.CommitAsync();
@@ -638,12 +676,11 @@ public sealed class RegistrationRepository
     {
         const string sql = "DELETE FROM Team WHERE TeamId = @teamId;";
 
-        await using var connection = new MySqlConnection(_connectionString);
-        await connection.OpenAsync();
+        await using var connection = await OpenConnectionAsync();
 
         await using var command = new MySqlCommand(sql, connection);
         command.Parameters.AddWithValue("@teamId", teamId);
-        await command.ExecuteNonQueryAsync();
+        await ExecuteNonQueryLoggedAsync(command);
     }
 
     public async Task<TeamTagAssignment> GetTeamTagAssignmentAsync(int teamId)
@@ -677,15 +714,14 @@ public sealed class RegistrationRepository
             ORDER BY TagCode;
             """;
 
-        await using var connection = new MySqlConnection(_connectionString);
-        await connection.OpenAsync();
+        await using var connection = await OpenConnectionAsync();
 
         TeamTagAssignment? team = null;
 
         await using (var teamCommand = new MySqlCommand(teamSql, connection))
         {
             teamCommand.Parameters.AddWithValue("@teamId", teamId);
-            await using var reader = await teamCommand.ExecuteReaderAsync();
+            await using var reader = await ExecuteReaderLoggedAsync(teamCommand);
             if (await reader.ReadAsync())
             {
                 var registeredAtOrdinal = reader.GetOrdinal("RegisteredAt");
@@ -711,7 +747,7 @@ public sealed class RegistrationRepository
         await using (var competitorCommand = new MySqlCommand(competitorSql, connection))
         {
             competitorCommand.Parameters.AddWithValue("@teamId", teamId);
-            await using var reader = await competitorCommand.ExecuteReaderAsync();
+            await using var reader = await ExecuteReaderLoggedAsync(competitorCommand);
             while (await reader.ReadAsync())
             {
                 team.Competitors.Add(reader.GetString("Name"));
@@ -721,7 +757,7 @@ public sealed class RegistrationRepository
         await using (var tagCommand = new MySqlCommand(tagsSql, connection))
         {
             tagCommand.Parameters.AddWithValue("@teamId", teamId);
-            await using var reader = await tagCommand.ExecuteReaderAsync();
+            await using var reader = await ExecuteReaderLoggedAsync(tagCommand);
             while (await reader.ReadAsync())
             {
                 team.TagCodes.Add(reader.GetString("TagCode"));
@@ -742,14 +778,13 @@ public sealed class RegistrationRepository
             LIMIT 1;
             """;
 
-        await using var connection = new MySqlConnection(_connectionString);
-        await connection.OpenAsync();
+        await using var connection = await OpenConnectionAsync();
 
         await using var command = new MySqlCommand(sql, connection);
         command.Parameters.AddWithValue("@tagCode", tagCode);
         command.Parameters.AddWithValue("@excludeTeamId", excludeTeamId);
 
-        await using var reader = await command.ExecuteReaderAsync();
+        await using var reader = await ExecuteReaderLoggedAsync(command);
         if (!await reader.ReadAsync())
         {
             return null;
@@ -786,8 +821,7 @@ public sealed class RegistrationRepository
         const string deleteSql = "DELETE FROM TagAssignment WHERE TeamId = @teamId;";
         const string insertSql = "INSERT INTO TagAssignment (TeamId, TagCode) VALUES (@teamId, @tagCode);";
 
-        await using var connection = new MySqlConnection(_connectionString);
-        await connection.OpenAsync();
+        await using var connection = await OpenConnectionAsync();
         await using var transaction = await connection.BeginTransactionAsync();
 
         try
@@ -796,13 +830,13 @@ public sealed class RegistrationRepository
             {
                 updateTeamCommand.Parameters.AddWithValue("@teamId", teamId);
                 updateTeamCommand.Parameters.AddWithValue("@lastUpdatedAt", lastUpdatedAt);
-                ThrowIfConcurrencyConflict(await updateTeamCommand.ExecuteNonQueryAsync());
+                ThrowIfConcurrencyConflict(await ExecuteNonQueryLoggedAsync(updateTeamCommand));
             }
 
             await using (var deleteCommand = new MySqlCommand(deleteSql, connection, transaction))
             {
                 deleteCommand.Parameters.AddWithValue("@teamId", teamId);
-                await deleteCommand.ExecuteNonQueryAsync();
+                await ExecuteNonQueryLoggedAsync(deleteCommand);
             }
 
             foreach (var tagCode in tagCodes)
@@ -810,7 +844,7 @@ public sealed class RegistrationRepository
                 await using var insertCommand = new MySqlCommand(insertSql, connection, transaction);
                 insertCommand.Parameters.AddWithValue("@teamId", teamId);
                 insertCommand.Parameters.AddWithValue("@tagCode", tagCode);
-                await insertCommand.ExecuteNonQueryAsync();
+                await ExecuteNonQueryLoggedAsync(insertCommand);
             }
 
             await transaction.CommitAsync();
@@ -818,6 +852,55 @@ public sealed class RegistrationRepository
         catch
         {
             await transaction.RollbackAsync();
+            throw;
+        }
+    }
+
+    private static async Task<MySqlDataReader> ExecuteReaderLoggedAsync(MySqlCommand command)
+    {
+        MySqlInteractionLogger.LogCommandStart("ExecuteReader", command);
+        try
+        {
+            var reader = await command.ExecuteReaderAsync();
+            MySqlInteractionLogger.LogCommandSuccess("ExecuteReader", "reader-opened=true");
+            return reader;
+        }
+        catch (Exception ex)
+        {
+            MySqlInteractionLogger.LogCommandFailure("ExecuteReader", ex, command);
+            throw;
+        }
+    }
+
+    private static async Task<int> ExecuteNonQueryLoggedAsync(MySqlCommand command)
+    {
+        MySqlInteractionLogger.LogCommandStart("ExecuteNonQuery", command);
+        try
+        {
+            var affectedRows = await command.ExecuteNonQueryAsync();
+            MySqlInteractionLogger.LogCommandSuccess("ExecuteNonQuery", $"affectedRows={affectedRows}");
+            return affectedRows;
+        }
+        catch (Exception ex)
+        {
+            MySqlInteractionLogger.LogCommandFailure("ExecuteNonQuery", ex, command);
+            throw;
+        }
+    }
+
+    private static async Task<object?> ExecuteScalarLoggedAsync(MySqlCommand command)
+    {
+        MySqlInteractionLogger.LogCommandStart("ExecuteScalar", command);
+        try
+        {
+            var value = await command.ExecuteScalarAsync();
+            var summary = value is null || value == DBNull.Value ? "result=null" : $"result={value}";
+            MySqlInteractionLogger.LogCommandSuccess("ExecuteScalar", summary);
+            return value;
+        }
+        catch (Exception ex)
+        {
+            MySqlInteractionLogger.LogCommandFailure("ExecuteScalar", ex, command);
             throw;
         }
     }
@@ -854,12 +937,11 @@ public sealed class RegistrationRepository
             ORDER BY Team.TeamNumber, Team.Name;
             """;
 
-        await using var connection = new MySqlConnection(_connectionString);
-        await connection.OpenAsync();
+        await using var connection = await OpenConnectionAsync();
 
         await using var command = new MySqlCommand(sql, connection);
         var rows = new List<AdminTeamOverviewRow>();
-        await using var reader = await command.ExecuteReaderAsync();
+        await using var reader = await ExecuteReaderLoggedAsync(command);
         while (await reader.ReadAsync())
         {
             rows.Add(new AdminTeamOverviewRow
@@ -879,3 +961,5 @@ public sealed class RegistrationRepository
         return rows;
     }
 }
+
+

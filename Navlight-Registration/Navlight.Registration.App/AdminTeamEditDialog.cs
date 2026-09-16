@@ -8,6 +8,7 @@ public sealed class AdminTeamEditDialog : Form
 {
     private const int MaximumAssignedTagCount = 3;
     private static readonly TimeSpan AdditionalTagWaitTimeout = TimeSpan.FromSeconds(10);
+    private static readonly Color InvalidFieldColor = Color.FromArgb(255, 250, 214, 214);
     private const string CopyCompetitorColumnName = "CopyCompetitor";
     private const string RemoveCompetitorColumnName = "RemoveCompetitor";
 
@@ -94,7 +95,9 @@ public sealed class AdminTeamEditDialog : Form
         detailsLayout.SetColumnSpan(headingLabel, 2);
 
         _teamNumberTextBox = new TextBox { Dock = DockStyle.Left, Width = 200 };
+        _teamNumberTextBox.TextChanged += (_, _) => _teamNumberTextBox.BackColor = SystemColors.Window;
         _teamNameTextBox = new TextBox { Dock = DockStyle.Fill };
+        _teamNameTextBox.TextChanged += (_, _) => _teamNameTextBox.BackColor = SystemColors.Window;
         _categoryComboBox = new ComboBox
         {
             Dock = DockStyle.Left,
@@ -111,6 +114,8 @@ public sealed class AdminTeamEditDialog : Form
             DisplayMember = nameof(CourseOption.Name),
             ValueMember = nameof(CourseOption.CourseId)
         };
+        _categoryComboBox.SelectedIndexChanged += (_, _) => _categoryComboBox.BackColor = SystemColors.Window;
+        _courseComboBox.SelectedIndexChanged += (_, _) => _courseComboBox.BackColor = SystemColors.Window;
         _registeredCheckBox = new CheckBox
         {
             AutoSize = true,
@@ -417,6 +422,10 @@ public sealed class AdminTeamEditDialog : Form
 
             _teamNumberTextBox.Text = _team.TeamNumber;
             _teamNameTextBox.Text = _team.Name;
+            _teamNumberTextBox.BackColor = SystemColors.Window;
+            _teamNameTextBox.BackColor = SystemColors.Window;
+            _categoryComboBox.BackColor = SystemColors.Window;
+            _courseComboBox.BackColor = SystemColors.Window;
             _categoryComboBox.DataSource = categories;
             _categoryComboBox.SelectedItem = categories.FirstOrDefault(item => item.CategoryId == _team.CategoryId);
             _courseComboBox.DataSource = courses;
@@ -458,12 +467,14 @@ public sealed class AdminTeamEditDialog : Form
 
         if (_categoryComboBox.SelectedItem is not CategoryOption selectedCategory)
         {
+            _categoryComboBox.BackColor = InvalidFieldColor;
             SetStatus("Select a category before saving.", true);
             return;
         }
 
         if (_courseComboBox.SelectedItem is not CourseOption selectedCourse)
         {
+            _courseComboBox.BackColor = InvalidFieldColor;
             SetStatus("Select a course before saving.", true);
             return;
         }
@@ -471,6 +482,7 @@ public sealed class AdminTeamEditDialog : Form
         var teamNumber = _teamNumberTextBox.Text.Trim();
         if (string.IsNullOrWhiteSpace(teamNumber))
         {
+            _teamNumberTextBox.BackColor = InvalidFieldColor;
             SetStatus("Team number is required.", true);
             return;
         }
@@ -478,6 +490,7 @@ public sealed class AdminTeamEditDialog : Form
         var teamName = _teamNameTextBox.Text.Trim();
         if (string.IsNullOrWhiteSpace(teamName))
         {
+            _teamNameTextBox.BackColor = InvalidFieldColor;
             SetStatus("Team name is required.", true);
             return;
         }
@@ -841,7 +854,7 @@ public sealed class AdminTeamEditDialog : Form
 
     private void SetStatus(string message, bool isError = false)
     {
-        _statusLabel.Text = message;
+        _statusLabel.Text = isError ? $"\u26A0 {message}" : message;
         _statusLabel.ForeColor = isError ? Color.Firebrick : Color.DimGray;
     }
 

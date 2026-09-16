@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <AssemblyName>navreg-installer</AssemblyName>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup Condition="Exists('NavlightBundle.zip')">
+    <EmbeddedResource Include="NavlightBundle.zip" LogicalName="NavlightBundle.zip" />
+  </ItemGroup>
+
+  <ItemGroup Condition="Exists('MySqlPackage.zip')">
+    <EmbeddedResource Include="MySqlPackage.zip" LogicalName="MySqlPackage.zip" />
+  </ItemGroup>
+</Project>

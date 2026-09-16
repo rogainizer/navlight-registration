@@ -10,9 +10,11 @@ public sealed class MainForm : Form
     private const int SearchDebounceMilliseconds = 250;
     private const string CopyCompetitorColumnName = "CopyCompetitor";
     private const string RemoveCompetitorColumnName = "RemoveCompetitor";
+    private static readonly Color InvalidFieldColor = Color.FromArgb(255, 250, 214, 214);
 
     private readonly RegistrationRepository _repository;
     private readonly TextBox _searchTextBox;
+    private readonly Label _searchHintLabel;
     private readonly ListBox _searchResultsListBox;
     private readonly TextBox _teamNumberTextBox;
     private readonly TextBox _teamNameTextBox;
@@ -77,8 +79,8 @@ public sealed class MainForm : Form
         };
         searchPanel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         searchPanel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        searchPanel.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         searchPanel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        searchPanel.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         searchPanel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
 
         var searchLabel = new Label
@@ -97,12 +99,22 @@ public sealed class MainForm : Form
         _searchTextBox.KeyDown += SearchTextBox_KeyDown;
         _searchTextBox.TextChanged += SearchTextBox_TextChanged;
 
+        _searchHintLabel = new Label
+        {
+            AutoSize = true,
+            ForeColor = Color.SteelBlue,
+            Margin = new Padding(0, 4, 0, 8)
+        };
+
         _searchResultsListBox = new ListBox
         {
-            Dock = DockStyle.Fill
+            Dock = DockStyle.Fill,
+            DrawMode = DrawMode.OwnerDrawFixed,
+            ItemHeight = 24
         };
         _searchResultsListBox.SelectedIndexChanged += SearchResultsListBox_SelectedIndexChanged;
         _searchResultsListBox.KeyDown += SearchResultsListBox_KeyDown;
+        _searchResultsListBox.DrawItem += SearchResultsListBox_DrawItem;
 
         _statusLabel = new Label
         {
@@ -114,8 +126,9 @@ public sealed class MainForm : Form
 
         searchPanel.Controls.Add(searchLabel, 0, 0);
         searchPanel.Controls.Add(_searchTextBox, 0, 1);
-        searchPanel.Controls.Add(_searchResultsListBox, 0, 2);
-        searchPanel.Controls.Add(_statusLabel, 0, 3);
+        searchPanel.Controls.Add(_searchHintLabel, 0, 2);
+        searchPanel.Controls.Add(_searchResultsListBox, 0, 3);
+        searchPanel.Controls.Add(_statusLabel, 0, 4);
 
         var detailsLayout = new TableLayoutPanel
         {
@@ -165,8 +178,16 @@ public sealed class MainForm : Form
             ValueMember = nameof(CourseOption.CourseId)
         };
         _teamNameTextBox.TextChanged += (_, _) => MarkDirty();
-        _categoryComboBox.SelectedIndexChanged += (_, _) => MarkDirty();
-        _courseComboBox.SelectedIndexChanged += (_, _) => MarkDirty();
+        _categoryComboBox.SelectedIndexChanged += (_, _) =>
+        {
+            _categoryComboBox.BackColor = SystemColors.Window;
+            MarkDirty();
+        };
+        _courseComboBox.SelectedIndexChanged += (_, _) =>
+        {
+            _courseComboBox.BackColor = SystemColors.Window;
+            MarkDirty();
+        };
         _registrationStatusValueLabel = new Label
         {
             AutoSize = true,
@@ -453,12 +474,14 @@ public sealed class MainForm : Form
 
         if (_categoryComboBox.SelectedItem is not CategoryOption selectedCategory)
         {
+            _categoryComboBox.BackColor = InvalidFieldColor;
             SetStatus("Select a category before saving.", true);
             return;
         }
 
         if (_courseComboBox.SelectedItem is not CourseOption selectedCourse)
         {
+            _courseComboBox.BackColor = InvalidFieldColor;
             SetStatus("Select a course before saving.", true);
             return;
         }
@@ -709,6 +732,13 @@ public sealed class MainForm : Form
 
     private async void SearchTextBox_KeyDown(object? sender, KeyEventArgs e)
     {
+        if (e.KeyCode == Keys.Escape)
+        {
+            e.SuppressKeyPress = true;
+            _searchTextBox.Clear();
+            return;
+        }
+
         if (e.KeyCode == Keys.Down)
         {
             e.SuppressKeyPress = true;
@@ -787,6 +817,7 @@ public sealed class MainForm : Form
         _lastSearchText = _searchTextBox.Text;
 
         var searchTerm = _searchTextBox.Text.Trim();
+        UpdateSearchHint(searchTerm);
         if (!IsImmediateTeamNumberSearch(searchTerm) && searchTerm.Length < MinimumSearchLength)
         {
             _searchDebounceTimer.Stop();
@@ -829,14 +860,12 @@ public sealed class MainForm : Form
                 return;
             }
 
+            _suppressSelectionHandling = true;
             _searchResultsListBox.DataSource = results;
             _searchResultsListBox.DisplayMember = nameof(TeamSearchResult.DisplayText);
             _searchResultsListBox.ValueMember = nameof(TeamSearchResult.TeamId);
-
-            if (results.Count > 0)
-            {
-                _searchResultsListBox.SelectedIndex = 0;
-            }
+            _searchResultsListBox.ClearSelected();
+            _suppressSelectionHandling = false;
 
             SetStatus(results.Count == 0 ? "No matching teams found." : $"Found {results.Count} matching team(s).");
         }
@@ -855,6 +884,31 @@ public sealed class MainForm : Form
         return !string.IsNullOrWhiteSpace(searchTerm) && searchTerm.All(char.IsDigit);
     }
 
+    private void UpdateSearchHint(string searchTerm)
+    {
+        _searchHintLabel.Text = searchTerm.Length switch
+        {
+            0 => string.Empty,
+            _ when IsImmediateTeamNumberSearch(searchTerm) => "Searching by team number",
+            _ => "Searching by team name"
+        };
+    }
+
+    private void SearchResultsListBox_DrawItem(object? sender, DrawItemEventArgs e)
+    {
+        e.DrawBackground();
+        if (e.Index >= 0 && _searchResultsListBox.Items[e.Index] is TeamSearchResult team)
+        {
+            var baseFont = e.Font ?? Font;
+            using var brush = new SolidBrush(team.Registered ? Color.SeaGreen : e.ForeColor);
+            using var boldFont = team.Registered ? new Font(baseFont, FontStyle.Bold) : null;
+            using var stringFormat = new StringFormat { LineAlignment = StringAlignment.Center };
+            e.Graphics.DrawString(team.DisplayText, boldFont ?? baseFont, brush, e.Bounds, stringFormat);
+        }
+
+        e.DrawFocusRectangle();
+    }
+
     private void ClearSearchResults()
     {
         _suppressDirtyTracking = true;
@@ -863,6 +917,7 @@ public sealed class MainForm : Form
         _searchResultsListBox.ClearSelected();
         _currentTeam = null;
         _searchRequestVersion++;
+        _searchHintLabel.Text = string.Empty;
         _teamNumberTextBox.Clear();
         _teamNameTextBox.Clear();
         _categoryComboBox.DataSource = null;
@@ -958,6 +1013,9 @@ public sealed class MainForm : Form
         _suppressDirtyTracking = true;
         try
         {
+            _categoryComboBox.BackColor = SystemColors.Window;
+            _courseComboBox.BackColor = SystemColors.Window;
+
             var categories = await _repository.GetCategoriesAsync(_currentTeam.EventId);
             var courses = await _repository.GetCoursesAsync(_currentTeam.EventId);
             var selectedCategory = categories.FirstOrDefault(category => category.CategoryId == _currentTeam.CategoryId);
@@ -1062,7 +1120,6 @@ public sealed class MainForm : Form
     private void ToggleBusyState(bool busy, string? status = null)
     {
         UseWaitCursor = busy;
-        _searchTextBox.Enabled = !busy;
         _searchResultsListBox.Enabled = !busy;
         _saveButton.Enabled = !busy && _currentTeam is not null;
         _closeButton.Enabled = !busy;
@@ -1075,7 +1132,7 @@ public sealed class MainForm : Form
 
     private void SetStatus(string message, bool isError = false)
     {
-        _statusLabel.Text = message;
+        _statusLabel.Text = isError ? $"\u26A0 {message}" : message;
         _statusLabel.ForeColor = isError ? Color.Firebrick : Color.DimGray;
     }
 
