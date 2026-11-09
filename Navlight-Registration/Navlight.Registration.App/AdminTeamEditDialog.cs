@@ -412,6 +412,7 @@ public sealed class AdminTeamEditDialog : Form
                 {
                     TeamId = 0,
                     EventId = eventId,
+                    TeamNumber = await _repository.GetNextTeamNumberAsync(eventId),
                     Registered = false
                 };
                 _competitors.Add(new CompetitorRow());

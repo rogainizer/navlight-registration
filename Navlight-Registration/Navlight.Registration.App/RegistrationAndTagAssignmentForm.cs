@@ -99,8 +99,29 @@ public sealed class RegistrationAndTagAssignmentForm : Form
             Text = "Search Team Name",
             AutoSize = true,
             Font = new Font(Font, FontStyle.Bold),
-            Margin = new Padding(0, 0, 0, 8)
+            Margin = new Padding(0, 6, 0, 8)
         };
+
+        var addTeamButton = new Button
+        {
+            Text = "Add Team",
+            AutoSize = true,
+            Anchor = AnchorStyles.Right,
+            Margin = new Padding(0, 0, 0, 4)
+        };
+        addTeamButton.Click += AddTeamButton_Click;
+
+        var searchHeader = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            AutoSize = true,
+            ColumnCount = 2,
+            RowCount = 1
+        };
+        searchHeader.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        searchHeader.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        searchHeader.Controls.Add(searchLabel, 0, 0);
+        searchHeader.Controls.Add(addTeamButton, 1, 0);
 
         _searchTextBox = new TextBox
         {
@@ -121,7 +142,7 @@ public sealed class RegistrationAndTagAssignmentForm : Form
         {
             Dock = DockStyle.Fill,
             DrawMode = DrawMode.OwnerDrawFixed,
-            ItemHeight = 24
+            ItemHeight = 56
         };
         _searchResultsListBox.SelectedIndexChanged += SearchResultsListBox_SelectedIndexChanged;
         _searchResultsListBox.KeyDown += SearchResultsListBox_KeyDown;
@@ -135,7 +156,7 @@ public sealed class RegistrationAndTagAssignmentForm : Form
             Text = "Ready"
         };
 
-        searchPanel.Controls.Add(searchLabel, 0, 0);
+        searchPanel.Controls.Add(searchHeader, 0, 0);
         searchPanel.Controls.Add(_searchTextBox, 0, 1);
         searchPanel.Controls.Add(_searchHintLabel, 0, 2);
         searchPanel.Controls.Add(_searchResultsListBox, 0, 3);
@@ -423,8 +444,32 @@ public sealed class RegistrationAndTagAssignmentForm : Form
         detailsWrapper.Controls.Add(detailsLayout, 0, 0);
         detailsWrapper.Controls.Add(footerPanel, 0, 1);
 
-        rootLayout.Controls.Add(searchPanel, 0, 0);
-        rootLayout.Controls.Add(detailsWrapper, 1, 0);
+        var splitContainer = new SplitContainer
+        {
+            Dock = DockStyle.Fill,
+            FixedPanel = FixedPanel.Panel1,
+            Panel1MinSize = 200,
+            SplitterWidth = 8
+        };
+        splitContainer.Panel1.Controls.Add(searchPanel);
+        splitContainer.Panel2.Controls.Add(detailsWrapper);
+        splitContainer.Panel1.Padding = new Padding(0, 0, 4, 0);
+        splitContainer.Panel2.Padding = new Padding(4, 0, 0, 0);
+        splitContainer.TabStop = false;
+        splitContainer.SplitterMoved += (_, _) => _searchTextBox.Focus();
+        Load += (_, _) =>
+        {
+            var headerWidth = searchLabel.PreferredSize.Width + searchLabel.Margin.Horizontal
+                + addTeamButton.PreferredSize.Width + addTeamButton.Margin.Horizontal;
+            splitContainer.Panel1MinSize = headerWidth + splitContainer.Panel1.Padding.Horizontal + 8;
+            splitContainer.Panel2MinSize = 400;
+            splitContainer.SplitterDistance = Math.Min(320, Math.Max(splitContainer.Panel1MinSize, splitContainer.Width - splitContainer.Panel2MinSize));
+        };
+
+        rootLayout.ColumnStyles.Clear();
+        rootLayout.ColumnCount = 1;
+        rootLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        rootLayout.Controls.Add(splitContainer, 0, 0);
 
         Controls.Add(rootLayout);
         SetEditState(false);
@@ -1035,11 +1080,30 @@ public sealed class RegistrationAndTagAssignmentForm : Form
             var baseFont = e.Font ?? Font;
             using var brush = new SolidBrush(team.Registered ? Color.SeaGreen : e.ForeColor);
             using var boldFont = team.Registered ? new Font(baseFont, FontStyle.Bold) : null;
-            using var stringFormat = new StringFormat { LineAlignment = StringAlignment.Center };
-            e.Graphics.DrawString(team.DisplayText, boldFont ?? baseFont, brush, e.Bounds, stringFormat);
+            using var stringFormat = new StringFormat { Trimming = StringTrimming.EllipsisCharacter, FormatFlags = StringFormatFlags.NoWrap };
+            var titleBounds = new Rectangle(e.Bounds.X, e.Bounds.Y + 4, e.Bounds.Width, e.Bounds.Height / 2 - 4);
+            var namesBounds = new Rectangle(e.Bounds.X, e.Bounds.Y + e.Bounds.Height / 2 + 4, e.Bounds.Width, e.Bounds.Height / 2 - 4);
+            e.Graphics.DrawString(team.DisplayText, boldFont ?? baseFont, brush, titleBounds, stringFormat);
+            using var namesFont = new Font(baseFont.FontFamily, baseFont.Size * 0.9f, FontStyle.Regular);
+            using var namesBrush = new SolidBrush((e.State & DrawItemState.Selected) != 0 ? e.ForeColor : Color.DimGray);
+            e.Graphics.DrawString(team.CompetitorNames, namesFont, namesBrush, namesBounds, stringFormat);
         }
 
         e.DrawFocusRectangle();
+    }
+
+    private async void AddTeamButton_Click(object? sender, EventArgs e)
+    {
+        if (_hasUnsavedChanges && _currentTeam is not null && !ConfirmDiscardChanges())
+        {
+            return;
+        }
+
+        using var dialog = new AdminTeamEditDialog();
+        if (dialog.ShowDialog(this) == DialogResult.OK && !string.IsNullOrWhiteSpace(_searchTextBox.Text))
+        {
+            await SearchTeamsAsync(forceSearch: true);
+        }
     }
 
     private async void SearchResultsListBox_KeyDown(object? sender, KeyEventArgs e)

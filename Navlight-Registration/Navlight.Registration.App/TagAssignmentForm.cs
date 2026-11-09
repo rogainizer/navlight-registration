@@ -102,7 +102,7 @@ public sealed class TagAssignmentForm : Form
         {
             Dock = DockStyle.Fill,
             DrawMode = DrawMode.OwnerDrawFixed,
-            ItemHeight = 24
+            ItemHeight = 56
         };
         _searchResultsListBox.SelectedIndexChanged += async (_, _) =>
         {
@@ -600,8 +600,13 @@ public sealed class TagAssignmentForm : Form
             var baseFont = e.Font ?? Font;
             using var brush = new SolidBrush(team.Registered ? Color.SeaGreen : e.ForeColor);
             using var boldFont = team.Registered ? new Font(baseFont, FontStyle.Bold) : null;
-            using var stringFormat = new StringFormat { LineAlignment = StringAlignment.Center };
-            e.Graphics.DrawString(team.DisplayText, boldFont ?? baseFont, brush, e.Bounds, stringFormat);
+            using var stringFormat = new StringFormat { Trimming = StringTrimming.EllipsisCharacter, FormatFlags = StringFormatFlags.NoWrap };
+            var titleBounds = new Rectangle(e.Bounds.X, e.Bounds.Y + 4, e.Bounds.Width, e.Bounds.Height / 2 - 4);
+            var namesBounds = new Rectangle(e.Bounds.X, e.Bounds.Y + e.Bounds.Height / 2 + 4, e.Bounds.Width, e.Bounds.Height / 2 - 4);
+            e.Graphics.DrawString(team.DisplayText, boldFont ?? baseFont, brush, titleBounds, stringFormat);
+            using var namesFont = new Font(baseFont.FontFamily, baseFont.Size * 0.9f, FontStyle.Regular);
+            using var namesBrush = new SolidBrush((e.State & DrawItemState.Selected) != 0 ? e.ForeColor : Color.DimGray);
+            e.Graphics.DrawString(team.CompetitorNames, namesFont, namesBrush, namesBounds, stringFormat);
         }
 
         e.DrawFocusRectangle();

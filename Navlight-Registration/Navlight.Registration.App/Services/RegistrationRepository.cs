@@ -70,12 +70,15 @@ public sealed class RegistrationRepository
                 var searchByTeamNumber = trimmedSearchTerm.All(char.IsDigit);
 
         const string sql = """
-            SELECT TeamId, TeamNumber, Name, Registered
+            SELECT TeamId, TeamNumber, Name, Registered,
+                   (SELECT GROUP_CONCAT(c.Name ORDER BY c.Name SEPARATOR ', ') FROM Competitor c WHERE c.TeamId = Team.TeamId) AS CompetitorNames
             FROM Team
                         WHERE ((@searchByTeamNumber = 1 AND TeamNumber LIKE @teamNumberPrefix)
-                                     OR (@searchByTeamNumber = 0 AND Name LIKE @searchTerm))
+                                     OR (@searchByTeamNumber = 0 AND (Name LIKE @searchTerm
+                                          OR EXISTS (SELECT 1 FROM Competitor c
+                                                     WHERE c.TeamId = Team.TeamId AND c.Name LIKE @searchTerm))))
               AND (@registeredOnly = 0 OR Registered = 1)
-            ORDER BY Name
+            ORDER BY Registered, Name
             LIMIT 50;
             """;
 
@@ -96,7 +99,8 @@ public sealed class RegistrationRepository
                 TeamId = reader.GetInt32("TeamId"),
                 TeamNumber = reader.GetString("TeamNumber"),
                 Name = reader.GetString("Name"),
-                Registered = reader.GetBoolean("Registered")
+                Registered = reader.GetBoolean("Registered"),
+                CompetitorNames = reader.IsDBNull(reader.GetOrdinal("CompetitorNames")) ? string.Empty : reader.GetString("CompetitorNames")
             });
         }
 
@@ -617,6 +621,23 @@ public sealed class RegistrationRepository
 
         var result = await ExecuteScalarLoggedAsync(command);
         return result is null ? null : Convert.ToInt32(result);
+    }
+
+    public async Task<string> GetNextTeamNumberAsync(int eventId)
+    {
+        const string sql = """
+            SELECT COALESCE(MAX(CAST(TeamNumber AS UNSIGNED)), 0) + 1
+            FROM Team
+            WHERE EventId = @eventId
+              AND TeamNumber REGEXP '^[0-9]+$';
+            """;
+
+        await using var connection = await OpenConnectionAsync();
+
+        await using var command = new MySqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@eventId", eventId);
+
+        return Convert.ToInt64(await ExecuteScalarLoggedAsync(command)).ToString();
     }
 
     public async Task ClearDatabaseAsync()

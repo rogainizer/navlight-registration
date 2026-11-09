@@ -6,6 +6,7 @@ public sealed class TeamSearchResult
     public string TeamNumber { get; init; } = string.Empty;
     public string Name { get; init; } = string.Empty;
     public bool Registered { get; init; }
+    public string CompetitorNames { get; init; } = string.Empty;
 
     public string DisplayText => $"{TeamNumber} - {Name}{(Registered ? " (registered)" : string.Empty)}";
 }
