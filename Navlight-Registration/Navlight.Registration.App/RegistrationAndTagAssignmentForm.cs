@@ -142,7 +142,7 @@ public sealed class RegistrationAndTagAssignmentForm : Form
         {
             Dock = DockStyle.Fill,
             DrawMode = DrawMode.OwnerDrawFixed,
-            ItemHeight = 56
+            ItemHeight = 95
         };
         _searchResultsListBox.SelectedIndexChanged += SearchResultsListBox_SelectedIndexChanged;
         _searchResultsListBox.KeyDown += SearchResultsListBox_KeyDown;
@@ -170,7 +170,7 @@ public sealed class RegistrationAndTagAssignmentForm : Form
             Padding = new Padding(16),
             BackColor = Color.White
         };
-        detailsLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 140));
+        detailsLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 280));
         detailsLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         detailsLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         detailsLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
@@ -316,9 +316,12 @@ public sealed class RegistrationAndTagAssignmentForm : Form
             AllowUserToDeleteRows = false,
             AllowUserToResizeRows = false,
             BackgroundColor = SystemColors.Window,
+            ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.DisableResizing,
+            ColumnHeadersHeight = 48,
             DataSource = _competitors,
             Margin = new Padding(0, 0, 0, 8),
             RowHeadersVisible = false,
+            RowTemplate = { Height = 44 },
             SelectionMode = DataGridViewSelectionMode.FullRowSelect,
             ShowCellToolTips = true
         };
@@ -463,7 +466,9 @@ public sealed class RegistrationAndTagAssignmentForm : Form
                 + addTeamButton.PreferredSize.Width + addTeamButton.Margin.Horizontal;
             splitContainer.Panel1MinSize = headerWidth + splitContainer.Panel1.Padding.Horizontal + 8;
             splitContainer.Panel2MinSize = 400;
-            splitContainer.SplitterDistance = Math.Min(320, Math.Max(splitContainer.Panel1MinSize, splitContainer.Width - splitContainer.Panel2MinSize));
+            var availableWidth = ClientSize.Width - rootLayout.Padding.Horizontal;
+            var maxDistance = availableWidth - splitContainer.Panel2MinSize - splitContainer.SplitterWidth;
+            splitContainer.SplitterDistance = Math.Max(splitContainer.Panel1MinSize, Math.Min(availableWidth / 3, maxDistance));
         };
 
         rootLayout.ColumnStyles.Clear();
@@ -623,9 +628,10 @@ public sealed class RegistrationAndTagAssignmentForm : Form
 
     private static Bitmap CreateAddActionIcon()
     {
-        var bitmap = new Bitmap(16, 16);
+        var bitmap = new Bitmap(32, 32);
         using var graphics = Graphics.FromImage(bitmap);
         graphics.Clear(Color.Transparent);
+        graphics.ScaleTransform(2, 2);
         graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
 
         using var pen = new Pen(Color.SeaGreen, 1.6f);
@@ -1081,8 +1087,10 @@ public sealed class RegistrationAndTagAssignmentForm : Form
             using var brush = new SolidBrush(team.Registered ? Color.SeaGreen : e.ForeColor);
             using var boldFont = team.Registered ? new Font(baseFont, FontStyle.Bold) : null;
             using var stringFormat = new StringFormat { Trimming = StringTrimming.EllipsisCharacter, FormatFlags = StringFormatFlags.NoWrap };
-            var titleBounds = new Rectangle(e.Bounds.X, e.Bounds.Y + 4, e.Bounds.Width, e.Bounds.Height / 2 - 4);
-            var namesBounds = new Rectangle(e.Bounds.X, e.Bounds.Y + e.Bounds.Height / 2 + 4, e.Bounds.Width, e.Bounds.Height / 2 - 4);
+            var titleHeight = (int)Math.Ceiling(e.Graphics.MeasureString(team.DisplayText, boldFont ?? baseFont).Height);
+            var namesTop = e.Bounds.Y + 4 + titleHeight + (54 - titleHeight) / 2;
+            var titleBounds = new Rectangle(e.Bounds.X, e.Bounds.Y + 4, e.Bounds.Width, titleHeight);
+            var namesBounds = new Rectangle(e.Bounds.X, namesTop, e.Bounds.Width, e.Bounds.Bottom - namesTop);
             e.Graphics.DrawString(team.DisplayText, boldFont ?? baseFont, brush, titleBounds, stringFormat);
             using var namesFont = new Font(baseFont.FontFamily, baseFont.Size * 0.9f, FontStyle.Regular);
             using var namesBrush = new SolidBrush((e.State & DrawItemState.Selected) != 0 ? e.ForeColor : Color.DimGray);

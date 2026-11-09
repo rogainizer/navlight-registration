@@ -9,6 +9,7 @@ internal static class Program
     static void Main()
     {
         ApplicationConfiguration.Initialize();
+        Application.SetDefaultFont(new Font("Segoe UI", 15f));
         EnsureLocalMySqlIsRunning();
 
         try

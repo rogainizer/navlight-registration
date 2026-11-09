@@ -19,7 +19,7 @@ public sealed class ModeSelectionForm : Form
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         MinimizeBox = false;
-        ClientSize = new Size(420, 350);
+        ClientSize = new Size(630, 462);
 
         var layout = new TableLayoutPanel
         {

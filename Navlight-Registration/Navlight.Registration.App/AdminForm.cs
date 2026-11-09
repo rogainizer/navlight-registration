@@ -62,6 +62,7 @@ public sealed class AdminForm : Form
         var headingPanel = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
+            AutoSize = true,
             ColumnCount = 8,
             RowCount = 3,
             Margin = new Padding(0, 0, 0, 12)
@@ -247,9 +248,16 @@ public sealed class AdminForm : Form
             SelectionMode = DataGridViewSelectionMode.FullRowSelect,
             MultiSelect = false,
             AutoSizeRowsMode = DataGridViewAutoSizeRowsMode.AllCells,
+            ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.DisableResizing,
+            ColumnHeadersHeight = 56,
+            ColumnHeadersDefaultCellStyle = new DataGridViewCellStyle
+            {
+                Padding = new Padding(0, 0, 0, 12)
+            },
             DefaultCellStyle = new DataGridViewCellStyle
             {
-                WrapMode = DataGridViewTriState.True
+                WrapMode = DataGridViewTriState.True,
+                Padding = new Padding(0, 6, 0, 6)
             }
         };
         _teamsGrid.Columns.Add(CreateTextColumn(nameof(AdminTeamOverviewRow.TeamNumber), "Team #", 90));
@@ -509,7 +517,7 @@ public sealed class AdminForm : Form
         Name = name,
         HeaderText = string.Empty,
         Image = image,
-        Width = 36,
+        Width = 56,
         AutoSizeMode = DataGridViewAutoSizeColumnMode.None,
         ImageLayout = DataGridViewImageCellLayout.Normal,
         ToolTipText = tooltipText,
@@ -523,9 +531,10 @@ public sealed class AdminForm : Form
 
     private static Bitmap CreateEditActionIcon()
     {
-        var bitmap = new Bitmap(16, 16);
+        var bitmap = new Bitmap(32, 32);
         using var graphics = Graphics.FromImage(bitmap);
         graphics.Clear(Color.Transparent);
+        graphics.ScaleTransform(2, 2);
         graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
 
         using var pen = new Pen(Color.SteelBlue, 1.4f);
@@ -542,9 +551,10 @@ public sealed class AdminForm : Form
 
     private static Bitmap CreateDeleteActionIcon()
     {
-        var bitmap = new Bitmap(16, 16);
+        var bitmap = new Bitmap(32, 32);
         using var graphics = Graphics.FromImage(bitmap);
         graphics.Clear(Color.Transparent);
+        graphics.ScaleTransform(2, 2);
         graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
 
         using var pen = new Pen(Color.Firebrick, 1.5f);
@@ -564,9 +574,10 @@ public sealed class AdminForm : Form
 
     private static Bitmap CreateAddActionIcon()
     {
-        var bitmap = new Bitmap(16, 16);
+        var bitmap = new Bitmap(32, 32);
         using var graphics = Graphics.FromImage(bitmap);
         graphics.Clear(Color.Transparent);
+        graphics.ScaleTransform(2, 2);
         graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
 
         using var pen = new Pen(Color.SeaGreen, 1.6f);
@@ -665,7 +676,7 @@ public sealed class AdminForm : Form
                 using var previewDialog = new PrintPreviewDialog
                 {
                     Document = document,
-                    Width = 1100,
+                    Width = 1375,
                     Height = 800,
                     StartPosition = FormStartPosition.CenterParent,
                     UseAntiAlias = true
@@ -724,6 +735,7 @@ public sealed class AdminForm : Form
         try
         {
             var teams = (await _repository.GetAdminTeamOverviewAsync())
+                .Where(team => team.Status.Equals("Registered", StringComparison.OrdinalIgnoreCase))
                 .OrderBy(team => ParseTeamNumber(team.TeamNumber))
                 .ThenBy(team => team.TeamNumber, StringComparer.OrdinalIgnoreCase)
                 .ToList();
@@ -995,11 +1007,20 @@ public sealed class AdminForm : Form
         var searchTerm = _teamSearchTextBox.Text.Trim();
         if (!string.IsNullOrWhiteSpace(searchTerm))
         {
-            filteredTeams = IsTagSearchTerm(searchTerm)
-                ? filteredTeams.Where(team => HasTagCode(team, searchTerm))
-                : filteredTeams.Where(team =>
-                    team.TeamNumber.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) ||
-                    team.TeamName.Contains(searchTerm, StringComparison.OrdinalIgnoreCase));
+            if (IsTagSearchTerm(searchTerm))
+            {
+                filteredTeams = filteredTeams.Where(team => HasTagCode(team, searchTerm));
+            }
+            else if (searchTerm.All(char.IsDigit))
+            {
+                filteredTeams = filteredTeams.Where(team => team.TeamNumber.StartsWith(searchTerm, StringComparison.OrdinalIgnoreCase));
+            }
+            else if (searchTerm.Length >= 2)
+            {
+                filteredTeams = filteredTeams.Where(team =>
+                    team.TeamName.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) ||
+                    team.Competitors.Contains(searchTerm, StringComparison.OrdinalIgnoreCase));
+            }
         }
 
         var selectedCategory = _categoryFilterComboBox.SelectedItem as string;

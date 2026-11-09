@@ -51,7 +51,7 @@ public sealed class AdminTeamEditDialog : Form
         StartPosition = FormStartPosition.CenterParent;
         MinimumSize = new Size(900, 700);
         Width = 980;
-        Height = 760;
+        Height = 1140;
 
         var rootLayout = new TableLayoutPanel
         {
@@ -72,7 +72,7 @@ public sealed class AdminTeamEditDialog : Form
             Padding = new Padding(16),
             BackColor = Color.White
         };
-        detailsLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 160));
+        detailsLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 320));
         detailsLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         detailsLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         detailsLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
@@ -177,9 +177,12 @@ public sealed class AdminTeamEditDialog : Form
             AllowUserToDeleteRows = false,
             AllowUserToResizeRows = false,
             BackgroundColor = SystemColors.Window,
+            ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.DisableResizing,
+            ColumnHeadersHeight = 48,
             DataSource = _competitors,
             Margin = new Padding(0, 0, 0, 8),
             RowHeadersVisible = false,
+            RowTemplate = { Height = 44 },
             SelectionMode = DataGridViewSelectionMode.FullRowSelect,
             ShowCellToolTips = true
         };
@@ -303,7 +306,7 @@ public sealed class AdminTeamEditDialog : Form
         Name = name,
         HeaderText = string.Empty,
         Image = image,
-        Width = 36,
+        Width = 56,
         AutoSizeMode = DataGridViewAutoSizeColumnMode.None,
         ImageLayout = DataGridViewImageCellLayout.Zoom,
         ToolTipText = tooltipText
@@ -311,9 +314,10 @@ public sealed class AdminTeamEditDialog : Form
 
     private static Bitmap CreateCopyActionIcon()
     {
-        var bitmap = new Bitmap(16, 16);
+        var bitmap = new Bitmap(32, 32);
         using var graphics = Graphics.FromImage(bitmap);
         graphics.Clear(Color.Transparent);
+        graphics.ScaleTransform(2, 2);
         graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
 
         using var pen = new Pen(Color.DimGray, 1.4f);
@@ -336,9 +340,10 @@ public sealed class AdminTeamEditDialog : Form
 
     private static Bitmap CreatePasteActionIcon()
     {
-        var bitmap = new Bitmap(16, 16);
+        var bitmap = new Bitmap(32, 32);
         using var graphics = Graphics.FromImage(bitmap);
         graphics.Clear(Color.Transparent);
+        graphics.ScaleTransform(2, 2);
         graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
 
         using var pen = new Pen(Color.SteelBlue, 1.4f);
@@ -357,9 +362,10 @@ public sealed class AdminTeamEditDialog : Form
 
     private static Bitmap CreateDeleteActionIcon()
     {
-        var bitmap = new Bitmap(16, 16);
+        var bitmap = new Bitmap(32, 32);
         using var graphics = Graphics.FromImage(bitmap);
         graphics.Clear(Color.Transparent);
+        graphics.ScaleTransform(2, 2);
         graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
 
         using var pen = new Pen(Color.Firebrick, 1.5f);
@@ -379,9 +385,10 @@ public sealed class AdminTeamEditDialog : Form
 
     private static Bitmap CreateAddActionIcon()
     {
-        var bitmap = new Bitmap(16, 16);
+        var bitmap = new Bitmap(32, 32);
         using var graphics = Graphics.FromImage(bitmap);
         graphics.Clear(Color.Transparent);
+        graphics.ScaleTransform(2, 2);
         graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
 
         using var pen = new Pen(Color.SeaGreen, 1.6f);
