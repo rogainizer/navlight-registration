@@ -45,6 +45,11 @@ internal sealed class NavlightApplicationContext : ApplicationContext
         nextForm.FormClosed += ActiveFormClosed;
 
         var previousForm = MainForm;
+        if (previousForm?.WindowState == FormWindowState.Maximized)
+        {
+            nextForm.WindowState = FormWindowState.Maximized;
+        }
+
         MainForm = nextForm;
         nextForm.Show();
 

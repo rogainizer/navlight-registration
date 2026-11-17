@@ -135,7 +135,7 @@ public sealed class TagAssignmentForm : Form
             Padding = new Padding(16),
             BackColor = Color.White
         };
-        detailsLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 140));
+        detailsLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 280));
         detailsLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         for (var index = 0; index < 5; index++)
         {
@@ -284,8 +284,33 @@ public sealed class TagAssignmentForm : Form
         detailsLayout.Controls.Add(footerPanel, 0, 5);
         detailsLayout.SetColumnSpan(footerPanel, 2);
 
-        rootLayout.Controls.Add(searchPanel, 0, 0);
-        rootLayout.Controls.Add(detailsLayout, 1, 0);
+        var splitContainer = new SplitContainer
+        {
+            Dock = DockStyle.Fill,
+            FixedPanel = FixedPanel.Panel1,
+            Panel1MinSize = 200,
+            SplitterWidth = 8
+        };
+        splitContainer.Panel1.Controls.Add(searchPanel);
+        splitContainer.Panel2.Controls.Add(detailsLayout);
+        splitContainer.Panel1.Padding = new Padding(0, 0, 4, 0);
+        splitContainer.Panel2.Padding = new Padding(4, 0, 0, 0);
+        splitContainer.TabStop = false;
+        splitContainer.SplitterMoved += (_, _) => _searchTextBox.Focus();
+        Load += (_, _) =>
+        {
+            splitContainer.Panel1MinSize = searchLabel.PreferredSize.Width + searchLabel.Margin.Horizontal
+                + splitContainer.Panel1.Padding.Horizontal + 8;
+            splitContainer.Panel2MinSize = 400;
+            var availableWidth = ClientSize.Width - rootLayout.Padding.Horizontal;
+            var maxDistance = availableWidth - splitContainer.Panel2MinSize - splitContainer.SplitterWidth;
+            splitContainer.SplitterDistance = Math.Max(splitContainer.Panel1MinSize, Math.Min(availableWidth / 3, maxDistance));
+        };
+
+        rootLayout.ColumnStyles.Clear();
+        rootLayout.ColumnCount = 1;
+        rootLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        rootLayout.Controls.Add(splitContainer, 0, 0);
 
         Controls.Add(rootLayout);
         SetEditState(false);

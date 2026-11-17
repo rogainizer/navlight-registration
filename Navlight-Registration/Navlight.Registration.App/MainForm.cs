@@ -88,8 +88,29 @@ public sealed class MainForm : Form
             Text = "Search Team Name",
             AutoSize = true,
             Font = new Font(Font, FontStyle.Bold),
-            Margin = new Padding(0, 0, 0, 8)
+            Margin = new Padding(0, 6, 0, 8)
         };
+
+        var addTeamButton = new Button
+        {
+            Text = "Add Team",
+            AutoSize = true,
+            Anchor = AnchorStyles.Right,
+            Margin = new Padding(0, 0, 0, 4)
+        };
+        addTeamButton.Click += AddTeamButton_Click;
+
+        var searchHeader = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            AutoSize = true,
+            ColumnCount = 2,
+            RowCount = 1
+        };
+        searchHeader.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        searchHeader.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        searchHeader.Controls.Add(searchLabel, 0, 0);
+        searchHeader.Controls.Add(addTeamButton, 1, 0);
 
         _searchTextBox = new TextBox
         {
@@ -124,7 +145,7 @@ public sealed class MainForm : Form
             Text = "Ready"
         };
 
-        searchPanel.Controls.Add(searchLabel, 0, 0);
+        searchPanel.Controls.Add(searchHeader, 0, 0);
         searchPanel.Controls.Add(_searchTextBox, 0, 1);
         searchPanel.Controls.Add(_searchHintLabel, 0, 2);
         searchPanel.Controls.Add(_searchResultsListBox, 0, 3);
@@ -138,7 +159,7 @@ public sealed class MainForm : Form
             Padding = new Padding(16),
             BackColor = Color.White
         };
-        detailsLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 140));
+        detailsLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 280));
         detailsLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         detailsLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         detailsLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
@@ -255,9 +276,12 @@ public sealed class MainForm : Form
             AllowUserToDeleteRows = false,
             AllowUserToResizeRows = false,
             BackgroundColor = SystemColors.Window,
+            ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.DisableResizing,
+            ColumnHeadersHeight = 48,
             DataSource = _competitors,
             Margin = new Padding(0, 0, 0, 8),
             RowHeadersVisible = false,
+            RowTemplate = { Height = 44 },
             SelectionMode = DataGridViewSelectionMode.FullRowSelect,
             ShowCellToolTips = true
         };
@@ -346,8 +370,34 @@ public sealed class MainForm : Form
         detailsWrapper.Controls.Add(detailsLayout, 0, 0);
         detailsWrapper.Controls.Add(footerPanel, 0, 1);
 
-        rootLayout.Controls.Add(searchPanel, 0, 0);
-        rootLayout.Controls.Add(detailsWrapper, 1, 0);
+        var splitContainer = new SplitContainer
+        {
+            Dock = DockStyle.Fill,
+            FixedPanel = FixedPanel.Panel1,
+            Panel1MinSize = 200,
+            SplitterWidth = 8
+        };
+        splitContainer.Panel1.Controls.Add(searchPanel);
+        splitContainer.Panel2.Controls.Add(detailsWrapper);
+        splitContainer.Panel1.Padding = new Padding(0, 0, 4, 0);
+        splitContainer.Panel2.Padding = new Padding(4, 0, 0, 0);
+        splitContainer.TabStop = false;
+        splitContainer.SplitterMoved += (_, _) => _searchTextBox.Focus();
+        Load += (_, _) =>
+        {
+            var headerWidth = searchLabel.PreferredSize.Width + searchLabel.Margin.Horizontal
+                + addTeamButton.PreferredSize.Width + addTeamButton.Margin.Horizontal;
+            splitContainer.Panel1MinSize = headerWidth + splitContainer.Panel1.Padding.Horizontal + 8;
+            splitContainer.Panel2MinSize = 400;
+            var availableWidth = ClientSize.Width - rootLayout.Padding.Horizontal;
+            var maxDistance = availableWidth - splitContainer.Panel2MinSize - splitContainer.SplitterWidth;
+            splitContainer.SplitterDistance = Math.Max(splitContainer.Panel1MinSize, Math.Min(availableWidth / 3, maxDistance));
+        };
+
+        rootLayout.ColumnStyles.Clear();
+        rootLayout.ColumnCount = 1;
+        rootLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        rootLayout.Controls.Add(splitContainer, 0, 0);
 
         Controls.Add(rootLayout);
         SetEditState(false);
@@ -449,9 +499,10 @@ public sealed class MainForm : Form
 
     private static Bitmap CreateAddActionIcon()
     {
-        var bitmap = new Bitmap(16, 16);
+        var bitmap = new Bitmap(32, 32);
         using var graphics = Graphics.FromImage(bitmap);
         graphics.Clear(Color.Transparent);
+        graphics.ScaleTransform(2, 2);
         graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
 
         using var pen = new Pen(Color.SeaGreen, 1.6f);
@@ -779,6 +830,20 @@ public sealed class MainForm : Form
     {
         _searchDebounceTimer.Stop();
         await SearchTeamsAsync();
+    }
+
+    private async void AddTeamButton_Click(object? sender, EventArgs e)
+    {
+        if (_hasUnsavedChanges && _currentTeam is not null && !ConfirmDiscardChanges())
+        {
+            return;
+        }
+
+        using var dialog = new AdminTeamEditDialog();
+        if (dialog.ShowDialog(this) == DialogResult.OK && !string.IsNullOrWhiteSpace(_searchTextBox.Text))
+        {
+            await SearchTeamsAsync(forceSearch: true);
+        }
     }
 
     private async void SearchResultsListBox_KeyDown(object? sender, KeyEventArgs e)
