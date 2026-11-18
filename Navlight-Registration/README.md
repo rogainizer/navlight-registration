@@ -50,3 +50,11 @@ After the .NET 8 SDK is installed, restore and run the app:
 dotnet restore .\Navlight.Registration.App\Navlight.Registration.App.csproj
 dotnet run --project .\Navlight.Registration.App\Navlight.Registration.App.csproj
 ```
+
+## Tests
+
+Run the hardware-independent tag-reader protocol tests with:
+
+```powershell
+dotnet test .\Navlight.Registration.App.Tests\Navlight.Registration.App.Tests.csproj
+```

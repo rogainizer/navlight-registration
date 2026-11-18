@@ -427,7 +427,7 @@ public sealed class NavLightTagReader
             || line.Equals("Connected", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static NavLightTagReadResult ParseTagIdResponse(string responseLine)
+    internal static NavLightTagReadResult ParseTagIdResponse(string responseLine)
     {
         var tokens = responseLine.Split(' ', StringSplitOptions.RemoveEmptyEntries);
         if (tokens.Length != 6)
@@ -463,7 +463,7 @@ public sealed class NavLightTagReader
         };
     }
 
-    private static void ValidateErasePreparationResponse(string responseLine, string expectedBaseIdSumHex)
+    internal static void ValidateErasePreparationResponse(string responseLine, string expectedBaseIdSumHex)
     {
         var tokens = responseLine.Split(' ', StringSplitOptions.RemoveEmptyEntries);
         if (tokens.Length < 2)
@@ -483,7 +483,7 @@ public sealed class NavLightTagReader
         }
     }
 
-    private static void ValidateAckResponse(string responseLine)
+    internal static void ValidateAckResponse(string responseLine)
     {
         if (!responseLine.StartsWith("5A", StringComparison.OrdinalIgnoreCase))
         {
@@ -491,7 +491,7 @@ public sealed class NavLightTagReader
         }
     }
 
-    private static string CalculateBaseIdSumHex(string tagIdHex)
+    internal static string CalculateBaseIdSumHex(string tagIdHex)
     {
         if (tagIdHex.Length != 6)
         {
