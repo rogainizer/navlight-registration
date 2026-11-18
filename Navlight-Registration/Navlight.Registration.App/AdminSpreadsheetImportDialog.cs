@@ -1,4 +1,5 @@
 using ClosedXML.Excel;
+using Microsoft.VisualBasic.FileIO;
 using Navlight.Registration.App.Models;
 using Navlight.Registration.App.Services;
 
@@ -9,6 +10,7 @@ public sealed class AdminSpreadsheetImportDialog : Form
     private readonly RegistrationRepository _repository;
     private readonly TextBox _eventNameTextBox;
     private readonly DateTimePicker _eventDatePicker;
+    private readonly ComboBox _fileTypeComboBox;
     private readonly CheckBox _hasHeaderCheckBox;
     private readonly TextBox _filePathTextBox;
     private readonly Button _browseButton;
@@ -16,16 +18,21 @@ public sealed class AdminSpreadsheetImportDialog : Form
     private readonly Button _cancelButton;
     private readonly Label _statusLabel;
     private readonly Label _summaryLabel;
+    private readonly Label _instructionsLabel;
 
-    public AdminSpreadsheetImportDialog()
+    public AdminSpreadsheetImportDialog() : this(DatabaseOptions.Load())
     {
-        _repository = new RegistrationRepository(DatabaseOptions.Load());
+    }
 
-        Text = "Load Teams from Spreadsheet";
+    internal AdminSpreadsheetImportDialog(DatabaseOptions databaseOptions)
+    {
+        _repository = new RegistrationRepository(databaseOptions);
+
+        Text = "Load Teams from File";
         StartPosition = FormStartPosition.CenterParent;
-        MinimumSize = new Size(720, 360);
-        Width = 780;
-        Height = 420;
+        MinimumSize = new Size(780, 600);
+        Width = 820;
+        Height = 650;
 
         var rootLayout = new TableLayoutPanel
         {
@@ -50,13 +57,15 @@ public sealed class AdminSpreadsheetImportDialog : Form
         var fileLayout = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
+            AutoSize = true,
             ColumnCount = 3,
-            RowCount = 5,
+            RowCount = 6,
             Margin = new Padding(0, 0, 0, 12)
         };
         fileLayout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         fileLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         fileLayout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        fileLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         fileLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         fileLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         fileLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
@@ -94,9 +103,26 @@ public sealed class AdminSpreadsheetImportDialog : Form
             Value = DateTime.Today
         };
 
+        var fileTypeLabel = new Label
+        {
+            Text = "File Type",
+            AutoSize = true,
+            Anchor = AnchorStyles.Left,
+            Margin = new Padding(0, 8, 12, 0)
+        };
+
+        _fileTypeComboBox = new ComboBox
+        {
+            DropDownStyle = ComboBoxStyle.DropDownList,
+            Dock = DockStyle.Fill,
+            Margin = new Padding(0, 4, 12, 0)
+        };
+        _fileTypeComboBox.Items.AddRange(["Spreadsheet", "Navlight"]);
+        _fileTypeComboBox.SelectedIndex = 0;
+
         var fileLabel = new Label
         {
-            Text = "Spreadsheet",
+            Text = "File",
             AutoSize = true,
             Anchor = AnchorStyles.Left,
             Margin = new Padding(0, 8, 12, 0)
@@ -118,19 +144,19 @@ public sealed class AdminSpreadsheetImportDialog : Form
         };
         _browseButton.Click += BrowseButton_Click;
 
-        var instructionsLabel = new Label
+        _instructionsLabel = new Label
         {
             AutoSize = true,
             MaximumSize = new Size(680, 0),
             ForeColor = Color.DimGray,
             Margin = new Padding(0, 8, 0, 0),
-            Text = "Use the first worksheet. Expected columns are: Team Number, Category, Competitor Name, Team Name, Course. Multiple rows for the same team are grouped together. Use the header checkbox to skip the first row when the spreadsheet includes headings. The selected event name and date are used to create or reuse the target event. Missing categories and courses are created automatically for that event."
+            Text = "First worksheet columns: Team Number, Category, Competitor Name, Team Name, Course. One row per competitor. Teams are grouped by number; missing categories and courses are created for the selected event."
         };
 
         _hasHeaderCheckBox = new CheckBox
         {
             AutoSize = true,
-            Text = "Spreadsheet includes a header row",
+            Text = "File includes a header row",
             Checked = true,
             Margin = new Padding(0, 8, 0, 0)
         };
@@ -140,13 +166,16 @@ public sealed class AdminSpreadsheetImportDialog : Form
         fileLayout.SetColumnSpan(_eventNameTextBox, 2);
         fileLayout.Controls.Add(eventDateLabel, 0, 1);
         fileLayout.Controls.Add(_eventDatePicker, 1, 1);
-        fileLayout.Controls.Add(_filePathTextBox, 1, 2);
-        fileLayout.Controls.Add(_browseButton, 2, 2);
-        fileLayout.Controls.Add(fileLabel, 0, 2);
-        fileLayout.Controls.Add(_hasHeaderCheckBox, 1, 3);
+        fileLayout.Controls.Add(fileTypeLabel, 0, 2);
+        fileLayout.Controls.Add(_fileTypeComboBox, 1, 2);
+        fileLayout.SetColumnSpan(_fileTypeComboBox, 2);
+        fileLayout.Controls.Add(_filePathTextBox, 1, 3);
+        fileLayout.Controls.Add(_browseButton, 2, 3);
+        fileLayout.Controls.Add(fileLabel, 0, 3);
+        fileLayout.Controls.Add(_hasHeaderCheckBox, 1, 4);
         fileLayout.SetColumnSpan(_hasHeaderCheckBox, 2);
-        fileLayout.Controls.Add(instructionsLabel, 0, 4);
-        fileLayout.SetColumnSpan(instructionsLabel, 3);
+        fileLayout.Controls.Add(_instructionsLabel, 0, 5);
+        fileLayout.SetColumnSpan(_instructionsLabel, 3);
 
         var summaryPanel = new Panel
         {
@@ -208,16 +237,34 @@ public sealed class AdminSpreadsheetImportDialog : Form
         rootLayout.Controls.Add(buttonPanel, 0, 3);
 
         Controls.Add(rootLayout);
+        _fileTypeComboBox.SelectedIndexChanged += FileTypeComboBox_SelectedIndexChanged;
         AcceptButton = _importButton;
         CancelButton = _cancelButton;
     }
 
+    private void FileTypeComboBox_SelectedIndexChanged(object? sender, EventArgs e)
+    {
+        var isNavlight = _fileTypeComboBox.SelectedIndex == 1;
+        _filePathTextBox.Clear();
+        _filePathTextBox.PlaceholderText = isNavlight
+            ? "Select a Navlight CSV file"
+            : "Select an Excel workbook (.xlsx or .xlsm)";
+        _instructionsLabel.Text = isNavlight
+            ? "CSV columns: Team No, unused, Grade, Name, Team Name, Event Code. Grade is the category; Event Code is the course. One row per competitor."
+            : "First worksheet columns: Team Number, Category, Competitor Name, Team Name, Course. One row per competitor. Teams are grouped by number; missing categories and courses are created for the selected event.";
+        _summaryLabel.Text = "No file selected.";
+        SetStatus("Ready");
+    }
+
     private void BrowseButton_Click(object? sender, EventArgs e)
     {
+        var isNavlight = _fileTypeComboBox.SelectedIndex == 1;
         using var dialog = new OpenFileDialog
         {
-            Filter = "Excel Workbook (*.xlsx;*.xlsm)|*.xlsx;*.xlsm|All Files (*.*)|*.*",
-            Title = "Select team import spreadsheet",
+            Filter = isNavlight
+                ? "CSV files (*.csv)|*.csv|All Files (*.*)|*.*"
+                : "Excel Workbook (*.xlsx;*.xlsm)|*.xlsx;*.xlsm|All Files (*.*)|*.*",
+            Title = isNavlight ? "Select Navlight CSV file" : "Select team import spreadsheet",
             CheckFileExists = true,
             Multiselect = false
         };
@@ -244,25 +291,27 @@ public sealed class AdminSpreadsheetImportDialog : Form
 
         if (string.IsNullOrWhiteSpace(filePath))
         {
-            SetStatus("Select a spreadsheet before loading.", true);
+            SetStatus("Select a file before loading.", true);
             return;
         }
 
         if (!File.Exists(filePath))
         {
-            SetStatus("The selected spreadsheet does not exist.", true);
+            SetStatus("The selected file does not exist.", true);
             return;
         }
 
-        ToggleBusyState(true, "Loading spreadsheet...");
+        ToggleBusyState(true, "Loading file...");
 
         try
         {
             var eventDate = _eventDatePicker.Value.Date;
-            var importedTeams = ReadSpreadsheet(filePath, _hasHeaderCheckBox.Checked);
+            var importedTeams = _fileTypeComboBox.SelectedIndex == 1
+                ? ReadNavlightCsv(filePath, _hasHeaderCheckBox.Checked)
+                : ReadSpreadsheet(filePath, _hasHeaderCheckBox.Checked);
             if (importedTeams.Count == 0)
             {
-                throw new InvalidOperationException("The spreadsheet does not contain any team rows.");
+                throw new InvalidOperationException("The file does not contain any team rows.");
             }
 
             var eventId = await _repository.GetOrCreateEventAsync(eventName, eventDate);
@@ -322,7 +371,7 @@ public sealed class AdminSpreadsheetImportDialog : Form
             }
 
             _summaryLabel.Text = $"Loaded {importedTeams.Count} team(s) into '{eventName}' on {eventDate:d} from {Path.GetFileName(filePath)}. Created: {createdCount}. Updated: {updatedCount}. Competitors: {competitorCount}.";
-            SetStatus("Spreadsheet loaded successfully.");
+            SetStatus("File loaded successfully.");
             DialogResult = DialogResult.OK;
             Close();
         }
@@ -336,7 +385,7 @@ public sealed class AdminSpreadsheetImportDialog : Form
         }
     }
 
-    private static List<ImportedTeam> ReadSpreadsheet(string filePath, bool hasHeaderRow)
+    internal static List<ImportedTeam> ReadSpreadsheet(string filePath, bool hasHeaderRow)
     {
         using var workbook = new XLWorkbook(filePath);
         var worksheet = workbook.Worksheets.FirstOrDefault();
@@ -358,16 +407,70 @@ public sealed class AdminSpreadsheetImportDialog : Form
         }
 
         var startIndex = hasHeaderRow ? 1 : 0;
+        return GroupImportedRows(rows.Skip(startIndex).Select(row => new ImportedRow(
+            row.RowNumber(),
+            row.Cell(1).GetString(),
+            row.Cell(2).GetString(),
+            row.Cell(3).GetString(),
+            row.Cell(4).GetString(),
+            row.Cell(5).GetString())));
+    }
+
+    internal static List<ImportedTeam> ReadNavlightCsv(string filePath, bool hasHeaderRow)
+    {
+        using var parser = new TextFieldParser(filePath)
+        {
+            TextFieldType = FieldType.Delimited,
+            HasFieldsEnclosedInQuotes = true,
+            TrimWhiteSpace = false
+        };
+        parser.SetDelimiters(",");
+
+        var rows = new List<ImportedRow>();
+        var isFirstRow = true;
+        while (!parser.EndOfData)
+        {
+            var rowNumber = parser.LineNumber;
+            string[] fields;
+            try
+            {
+                fields = parser.ReadFields()
+                    ?? throw new InvalidOperationException($"Could not read CSV row {rowNumber}.");
+            }
+            catch (MalformedLineException ex)
+            {
+                throw new InvalidOperationException($"CSV row {ex.LineNumber} is malformed.", ex);
+            }
+
+            if (isFirstRow && hasHeaderRow)
+            {
+                isFirstRow = false;
+                continue;
+            }
+
+            isFirstRow = false;
+            if (fields.Length != 6)
+            {
+                throw new InvalidOperationException($"CSV row {rowNumber} must contain exactly 6 columns.");
+            }
+
+            rows.Add(new ImportedRow(rowNumber, fields[0], fields[2], fields[3], fields[4], fields[5]));
+        }
+
+        return GroupImportedRows(rows);
+    }
+
+    private static List<ImportedTeam> GroupImportedRows(IEnumerable<ImportedRow> rows)
+    {
         var teams = new Dictionary<string, ImportedTeam>(StringComparer.OrdinalIgnoreCase);
 
-        for (var rowIndex = startIndex; rowIndex < rows.Count; rowIndex++)
+        foreach (var row in rows)
         {
-            var row = rows[rowIndex];
-            var teamNumber = row.Cell(1).GetString().Trim();
-            var categoryName = row.Cell(2).GetString().Trim();
-            var competitorName = SanitizeImportedName(row.Cell(3).GetString());
-            var teamName = SanitizeImportedName(row.Cell(4).GetString());
-            var courseName = row.Cell(5).GetString().Trim();
+            var teamNumber = row.TeamNumber.Trim();
+            var categoryName = row.CategoryName.Trim();
+            var competitorName = SanitizeImportedName(row.CompetitorName);
+            var teamName = SanitizeImportedName(row.TeamName);
+            var courseName = row.CourseName.Trim();
 
             if (string.IsNullOrWhiteSpace(teamNumber) &&
                 string.IsNullOrWhiteSpace(categoryName) &&
@@ -384,7 +487,7 @@ public sealed class AdminSpreadsheetImportDialog : Form
                 string.IsNullOrWhiteSpace(teamName) ||
                 string.IsNullOrWhiteSpace(courseName))
             {
-                throw new InvalidOperationException($"Row {row.RowNumber()} is missing one or more required values.");
+                throw new InvalidOperationException($"Row {row.RowNumber} is missing one or more required values.");
             }
 
             if (!teams.TryGetValue(teamNumber, out var importedTeam))
@@ -422,6 +525,7 @@ public sealed class AdminSpreadsheetImportDialog : Form
     {
         _eventNameTextBox.Enabled = !busy;
         _eventDatePicker.Enabled = !busy;
+        _fileTypeComboBox.Enabled = !busy;
         _hasHeaderCheckBox.Enabled = !busy;
         _filePathTextBox.Enabled = !busy;
         _browseButton.Enabled = !busy;
@@ -436,7 +540,9 @@ public sealed class AdminSpreadsheetImportDialog : Form
         _statusLabel.ForeColor = isError ? Color.Firebrick : Color.DimGray;
     }
 
-    private sealed class ImportedTeam(string teamNumber, string categoryName, string teamName, string courseName)
+    private sealed record ImportedRow(long RowNumber, string TeamNumber, string CategoryName, string CompetitorName, string TeamName, string CourseName);
+
+    internal sealed class ImportedTeam(string teamNumber, string categoryName, string teamName, string courseName)
     {
         public string TeamNumber { get; } = teamNumber;
         public string CategoryName { get; } = categoryName;

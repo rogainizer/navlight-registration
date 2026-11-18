@@ -42,6 +42,15 @@ Run `database/schema.sql` on the MySQL host, then preload:
 
 For local testing, you can also load `database/test-data.sql` after the schema to create a small sample event with categories, teams, and competitors.
 
+## Importing teams
+
+In the admin team import dialog, select **Spreadsheet** for an Excel workbook or **Navlight** for a CSV file. Enter the event name and date and indicate whether the first row is a header.
+
+- Spreadsheet: the first worksheet contains Team Number, Category, Competitor Name, Team Name, and Course.
+- Navlight CSV: columns are Team No, an unused column, Grade, Name, Team Name, and Event Code. Grade becomes the category and Event Code becomes the course.
+
+Use one row per competitor. Rows with the same team number are grouped, and missing categories and courses are created for the selected event. Importing an existing team replaces its competitor list. For both formats, team and competitor names are trimmed, `&` becomes `and`, and parentheses and commas are removed.
+
 ## Next step
 
 After the .NET 8 SDK is installed, restore and run the app:
@@ -53,7 +62,7 @@ dotnet run --project .\Navlight.Registration.App\Navlight.Registration.App.cspro
 
 ## Tests
 
-Run the hardware-independent tag-reader protocol tests with:
+Run the registration app tests with:
 
 ```powershell
 dotnet test .\Navlight.Registration.App.Tests\Navlight.Registration.App.Tests.csproj
