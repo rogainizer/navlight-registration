@@ -48,6 +48,7 @@ public sealed class AdminTeamEditDialog : Form
         _addActionIcon = CreateAddActionIcon();
 
         Text = _teamId.HasValue ? "Edit Team" : "Add Team";
+        NavlightBranding.ApplyWindowIcon(this);
         StartPosition = FormStartPosition.CenterParent;
         MinimumSize = new Size(900, 700);
         Width = 980;

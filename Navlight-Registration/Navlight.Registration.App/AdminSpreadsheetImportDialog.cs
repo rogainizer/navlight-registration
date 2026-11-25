@@ -29,6 +29,7 @@ public sealed class AdminSpreadsheetImportDialog : Form
         _repository = new RegistrationRepository(databaseOptions);
 
         Text = "Load Teams from File";
+        NavlightBranding.ApplyWindowIcon(this);
         StartPosition = FormStartPosition.CenterParent;
         MinimumSize = new Size(780, 600);
         Width = 820;

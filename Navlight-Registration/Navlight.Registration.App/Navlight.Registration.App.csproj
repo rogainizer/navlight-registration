@@ -5,6 +5,7 @@
     <UseWindowsForms>true</UseWindowsForms>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <ApplicationIcon>rogainizer.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
@@ -14,6 +15,9 @@
   </ItemGroup>
 
   <ItemGroup>
+    <EmbeddedResource Include="rogainizer.ico">
+      <LogicalName>Navlight.Registration.App.rogainizer.ico</LogicalName>
+    </EmbeddedResource>
     <EmbeddedResource Include="..\rogainizer.png">
       <LogicalName>Navlight.Registration.App.rogainizer.png</LogicalName>
     </EmbeddedResource>

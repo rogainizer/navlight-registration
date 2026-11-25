@@ -47,6 +47,7 @@ public sealed class MainForm : Form
     public MainForm()
     {
         Text = "Navlight Registration";
+        NavlightBranding.ApplyWindowIcon(this);
         StartPosition = FormStartPosition.CenterScreen;
         MinimumSize = new Size(1080, 720);
 

@@ -39,6 +39,7 @@ public sealed class AdminForm : Form
     public AdminForm()
     {
         Text = "Navlight Admin";
+        NavlightBranding.ApplyWindowIcon(this);
         StartPosition = FormStartPosition.CenterScreen;
         MinimumSize = new Size(1200, 720);
 

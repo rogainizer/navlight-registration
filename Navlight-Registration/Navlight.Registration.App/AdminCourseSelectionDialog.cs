@@ -13,6 +13,7 @@ public sealed class AdminCourseSelectionDialog : Form
     public AdminCourseSelectionDialog(IReadOnlyList<CourseOption> courses)
     {
         Text = "Select Courses";
+        NavlightBranding.ApplyWindowIcon(this);
         StartPosition = FormStartPosition.CenterParent;
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;

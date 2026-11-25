@@ -12,6 +12,7 @@ public sealed class TagAssignmentProgressDialog : Form
     public TagAssignmentProgressDialog(IReadOnlyCollection<string> initialTags, int maxTags)
     {
         Text = "Assign Tags";
+        NavlightBranding.ApplyWindowIcon(this);
         StartPosition = FormStartPosition.Manual;
         FormBorderStyle = FormBorderStyle.FixedDialog;
         KeyPreview = true;

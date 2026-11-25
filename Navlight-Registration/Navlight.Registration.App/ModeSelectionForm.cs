@@ -10,13 +10,12 @@ public enum AppMode
 
 public sealed class ModeSelectionForm : Form
 {
-    private static readonly Image Logo = LoadLogo();
-
     public AppMode SelectedMode { get; private set; } = AppMode.Registration;
 
     public ModeSelectionForm()
     {
         Text = "Navlight";
+        NavlightBranding.ApplyWindowIcon(this);
         StartPosition = FormStartPosition.CenterScreen;
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
@@ -41,7 +40,7 @@ public sealed class ModeSelectionForm : Form
 
         var logoPictureBox = new PictureBox
         {
-            Image = Logo,
+            Image = NavlightBranding.AppLogo,
             SizeMode = PictureBoxSizeMode.Zoom,
             Size = new Size(112, 112),
             Anchor = AnchorStyles.None,
@@ -113,15 +112,6 @@ public sealed class ModeSelectionForm : Form
         Controls.Add(layout);
         AcceptButton = registrationButton;
         CancelButton = cancelButton;
-    }
-
-    private static Image LoadLogo()
-    {
-        using var stream = typeof(ModeSelectionForm).Assembly.GetManifestResourceStream(
-            "Navlight.Registration.App.rogainizer.png")
-            ?? throw new InvalidOperationException("The Navlight logo resource could not be found.");
-        using var image = Image.FromStream(stream);
-        return new Bitmap(image);
     }
 
     private void SelectMode(AppMode mode)

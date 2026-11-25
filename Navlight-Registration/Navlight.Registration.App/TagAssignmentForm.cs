@@ -40,6 +40,7 @@ public sealed class TagAssignmentForm : Form
     public TagAssignmentForm(int? initialTeamId = null)
     {
         Text = "Navlight Tag Assignment";
+        NavlightBranding.ApplyWindowIcon(this);
         StartPosition = FormStartPosition.CenterScreen;
         MinimumSize = new Size(1080, 720);
         _initialTeamId = initialTeamId;

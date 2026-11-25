@@ -56,6 +56,7 @@ public sealed class RegistrationAndTagAssignmentForm : Form
     public RegistrationAndTagAssignmentForm()
     {
         Text = "Navlight Registration and Tag Assignment";
+        NavlightBranding.ApplyWindowIcon(this);
         StartPosition = FormStartPosition.CenterScreen;
         MinimumSize = new Size(1080, 760);
 
