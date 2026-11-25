@@ -10,6 +10,8 @@ public enum AppMode
 
 public sealed class ModeSelectionForm : Form
 {
+    private static readonly Image Logo = LoadLogo();
+
     public AppMode SelectedMode { get; private set; } = AppMode.Registration;
 
     public ModeSelectionForm()
@@ -19,22 +21,34 @@ public sealed class ModeSelectionForm : Form
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         MinimizeBox = false;
-        ClientSize = new Size(630, 462);
+        ClientSize = new Size(630, 570);
 
         var layout = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
             ColumnCount = 1,
-            RowCount = 6,
+            RowCount = 7,
             Padding = new Padding(20)
         };
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 25f));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 25f));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 25f));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 25f));
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+
+        var logoPictureBox = new PictureBox
+        {
+            Image = Logo,
+            SizeMode = PictureBoxSizeMode.Zoom,
+            Size = new Size(112, 112),
+            Anchor = AnchorStyles.None,
+            BackColor = Color.Black,
+            Margin = new Padding(0, 0, 0, 12)
+        };
+        layout.Controls.Add(logoPictureBox, 0, 0);
 
         var headingLabel = new Label
         {
@@ -43,7 +57,7 @@ public sealed class ModeSelectionForm : Form
             Font = new Font(Font, FontStyle.Bold),
             Margin = new Padding(0, 0, 0, 12)
         };
-        layout.Controls.Add(headingLabel, 0, 0);
+        layout.Controls.Add(headingLabel, 0, 1);
 
         var registrationButton = new Button
         {
@@ -90,15 +104,24 @@ public sealed class ModeSelectionForm : Form
             Margin = new Padding(0, 12, 0, 0)
         };
 
-        layout.Controls.Add(registrationButton, 0, 1);
-        layout.Controls.Add(tagAssignmentButton, 0, 2);
-        layout.Controls.Add(combinedButton, 0, 3);
-        layout.Controls.Add(adminButton, 0, 4);
-        layout.Controls.Add(cancelButton, 0, 5);
+        layout.Controls.Add(registrationButton, 0, 2);
+        layout.Controls.Add(tagAssignmentButton, 0, 3);
+        layout.Controls.Add(combinedButton, 0, 4);
+        layout.Controls.Add(adminButton, 0, 5);
+        layout.Controls.Add(cancelButton, 0, 6);
 
         Controls.Add(layout);
         AcceptButton = registrationButton;
         CancelButton = cancelButton;
+    }
+
+    private static Image LoadLogo()
+    {
+        using var stream = typeof(ModeSelectionForm).Assembly.GetManifestResourceStream(
+            "Navlight.Registration.App.rogainizer.png")
+            ?? throw new InvalidOperationException("The Navlight logo resource could not be found.");
+        using var image = Image.FromStream(stream);
+        return new Bitmap(image);
     }
 
     private void SelectMode(AppMode mode)
