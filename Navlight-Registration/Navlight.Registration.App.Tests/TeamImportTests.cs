@@ -6,6 +6,33 @@ namespace Navlight.Registration.App.Tests;
 public sealed class TeamImportTests
 {
     [Fact]
+    public void Spreadsheet_ReadsWorkbookOpenForWriting()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid()}.xlsx");
+        try
+        {
+            using (var workbook = new XLWorkbook())
+            {
+                var sheet = workbook.AddWorksheet("Teams");
+                sheet.Cell(1, 1).Value = "101";
+                sheet.Cell(1, 2).Value = "XV";
+                sheet.Cell(1, 3).Value = "Alex";
+                sheet.Cell(1, 4).Value = "Team";
+                sheet.Cell(1, 5).Value = "24 hour";
+                workbook.SaveAs(path);
+            }
+
+            using var openWorkbook = new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite);
+            var team = Assert.Single(AdminSpreadsheetImportDialog.ReadSpreadsheet(path, false));
+            Assert.Equal("101", team.TeamNumber);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
     public void NavlightCsv_MapsAndGroupsTeamRows()
     {
         const string csv = """

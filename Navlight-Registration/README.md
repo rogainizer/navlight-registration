@@ -51,6 +51,8 @@ In the admin team import dialog, select **Spreadsheet** for an Excel workbook or
 
 Use one row per competitor. Rows with the same team number are grouped, and missing categories and courses are created for the selected event. Importing an existing team replaces its competitor list. For both formats, team and competitor names are trimmed, `&` becomes `and`, and parentheses and commas are removed.
 
+Save any spreadsheet changes before importing. If loading fails, details appear in the import dialog. Database errors can occur after some data has been loaded; check the team list before retrying.
+
 ## Next step
 
 After the .NET 8 SDK is installed, restore and run the app:

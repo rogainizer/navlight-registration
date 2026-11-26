@@ -182,7 +182,8 @@ public sealed class AdminSpreadsheetImportDialog : Form
         {
             Dock = DockStyle.Fill,
             BackColor = Color.White,
-            Padding = new Padding(12)
+            Padding = new Padding(12),
+            AutoScroll = true
         };
 
         _summaryLabel = new Label
@@ -254,6 +255,7 @@ public sealed class AdminSpreadsheetImportDialog : Form
             ? "CSV columns: Team No, unused, Grade, Name, Team Name, Event Code. Grade is the category; Event Code is the course. One row per competitor."
             : "First worksheet columns: Team Number, Category, Competitor Name, Team Name, Course. One row per competitor. Teams are grouped by number; missing categories and courses are created for the selected event.";
         _summaryLabel.Text = "No file selected.";
+        _summaryLabel.ForeColor = SystemColors.ControlText;
         SetStatus("Ready");
     }
 
@@ -277,10 +279,11 @@ public sealed class AdminSpreadsheetImportDialog : Form
 
         _filePathTextBox.Text = dialog.FileName;
         _summaryLabel.Text = $"Selected file: {Path.GetFileName(dialog.FileName)}";
+        _summaryLabel.ForeColor = SystemColors.ControlText;
         SetStatus("Ready");
     }
 
-    private async Task ImportButton_ClickAsync()
+    internal async Task ImportButton_ClickAsync()
     {
         var eventName = _eventNameTextBox.Text.Trim();
         var filePath = _filePathTextBox.Text.Trim();
@@ -304,6 +307,7 @@ public sealed class AdminSpreadsheetImportDialog : Form
 
         ToggleBusyState(true, "Loading file...");
 
+        var databaseUpdatesStarted = false;
         try
         {
             var eventDate = _eventDatePicker.Value.Date;
@@ -315,6 +319,7 @@ public sealed class AdminSpreadsheetImportDialog : Form
                 throw new InvalidOperationException("The file does not contain any team rows.");
             }
 
+            databaseUpdatesStarted = true;
             var eventId = await _repository.GetOrCreateEventAsync(eventName, eventDate);
 
             var categories = await _repository.GetCategoriesAsync(eventId);
@@ -372,13 +377,16 @@ public sealed class AdminSpreadsheetImportDialog : Form
             }
 
             _summaryLabel.Text = $"Loaded {importedTeams.Count} team(s) into '{eventName}' on {eventDate:d} from {Path.GetFileName(filePath)}. Created: {createdCount}. Updated: {updatedCount}. Competitors: {competitorCount}.";
+            _summaryLabel.ForeColor = SystemColors.ControlText;
             SetStatus("File loaded successfully.");
             DialogResult = DialogResult.OK;
             Close();
         }
         catch (Exception ex)
         {
-            SetStatus(ex.Message, true);
+            SetStatus(databaseUpdatesStarted
+                ? $"{ex.Message}{Environment.NewLine}{Environment.NewLine}Some data may have been loaded. Check the team list before retrying."
+                : ex.Message, true);
         }
         finally
         {
@@ -388,7 +396,8 @@ public sealed class AdminSpreadsheetImportDialog : Form
 
     internal static List<ImportedTeam> ReadSpreadsheet(string filePath, bool hasHeaderRow)
     {
-        using var workbook = new XLWorkbook(filePath);
+        using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+        using var workbook = new XLWorkbook(stream);
         var worksheet = workbook.Worksheets.FirstOrDefault();
         if (worksheet is null)
         {
@@ -522,7 +531,7 @@ public sealed class AdminSpreadsheetImportDialog : Form
             .Trim();
     }
 
-    private void ToggleBusyState(bool busy, string status = "Ready")
+    private void ToggleBusyState(bool busy, string? status = null)
     {
         _eventNameTextBox.Enabled = !busy;
         _eventDatePicker.Enabled = !busy;
@@ -532,12 +541,21 @@ public sealed class AdminSpreadsheetImportDialog : Form
         _browseButton.Enabled = !busy;
         _importButton.Enabled = !busy;
         _cancelButton.Enabled = !busy;
-        SetStatus(status);
+        if (status is not null)
+        {
+            SetStatus(status);
+        }
     }
 
     private void SetStatus(string message, bool isError = false)
     {
-        _statusLabel.Text = isError ? $"\u26A0 {message}" : message;
+        if (isError)
+        {
+            _summaryLabel.Text = message;
+            _summaryLabel.ForeColor = Color.Firebrick;
+        }
+
+        _statusLabel.Text = isError ? "\u26A0 Load failed." : message;
         _statusLabel.ForeColor = isError ? Color.Firebrick : Color.DimGray;
     }
 
