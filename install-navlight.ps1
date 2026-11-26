@@ -458,6 +458,22 @@ if ($InstallMode -in @("HostAndClient", "SingleUser")) {
     Install-Shortcut -ShortcutPath (Join-Path $startMenuFolder "Navlight Stop MySQL.lnk") -TargetPath $powerShellExe -WorkingDirectory $targetDatabaseDir -Arguments $stopArgs
 }
 
+if (-not ("NavlightInstaller.ShellNotifications" -as [type])) {
+    Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+namespace NavlightInstaller {
+    public static class ShellNotifications {
+        [DllImport("shell32.dll")]
+        public static extern void SHChangeNotify(uint eventId, uint flags, IntPtr item1, IntPtr item2);
+    }
+}
+'@
+}
+$associationsChanged = 0x08000000
+$flush = 0x00001000
+[NavlightInstaller.ShellNotifications]::SHChangeNotify($associationsChanged, $flush, [IntPtr]::Zero, [IntPtr]::Zero)
+
 Write-Host "Navlight installation complete."
 Write-Host "Mode: $InstallMode"
 Write-Host "Install root: $InstallRoot"

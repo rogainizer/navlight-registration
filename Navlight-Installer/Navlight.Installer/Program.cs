@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Net.NetworkInformation;
 using System.Net;
 using System.Net.Sockets;
+using System.Runtime.InteropServices;
 using System.Security.Principal;
 using System.Text;
 using System.Text.Json;
@@ -554,8 +555,14 @@ internal static class InstallerEngine
             CreateShortcut(Path.Combine(startMenuFolder, "Navlight Stop MySQL.lnk"), stopMySqlTarget, targetDatabaseDir, stopMySqlArgs);
         }
 
+        const uint associationsChanged = 0x08000000;
+        const uint flush = 0x00001000;
+        SHChangeNotify(associationsChanged, flush, IntPtr.Zero, IntPtr.Zero);
         progress.Report("Navlight installation complete.");
     }
+
+    [DllImport("shell32.dll")]
+    private static extern void SHChangeNotify(uint eventId, uint flags, IntPtr item1, IntPtr item2);
 
     private static bool RequiresAdminForPath(string path)
     {

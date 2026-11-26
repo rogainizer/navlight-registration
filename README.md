@@ -165,6 +165,7 @@ The installer will prompt for:
 - the default install folder is `.\NavlightRegistration`
 - elevation is only needed if you choose a protected folder such as `Program Files`
 - the app creates shortcuts in the current user's Desktop and Start Menu
+- the installer asks Windows to refresh its icon cache after updating shortcuts
 
 ## Build a release package
 
